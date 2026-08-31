@@ -37,10 +37,10 @@ ELEMENT_LABELS = {
 DEFAULT_PARAMS = {
     "platform": {"length": 2.0, "width": 2.0, "height": 0.8},
     "stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8},
-    "hollow_stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8, "thickness": 0.16},
+    "hollow_stairs": {"length": 3.2, "width": 2.4, "height": 0.8, "steps": 8, "thickness": 0.05},
     "ramp": {"length": 3.0, "width": 2.0, "height": 0.8, "thickness": 0.16},
-    "stepping_stones": {"rows": 4, "cols": 6, "spacing_x": 0.85, "spacing_y": 0.85, "size": 0.45, "height": 0.45},
-    "triangle": {"count": 4, "length": 0.9, "width": 1.8, "height": 0.8, "angle": 30.0, "gap": 0.28, "stagger": 0.35, "pair_yaw": 90.0, "group_spacing": 2.1, "pair_spacing": 1.18},
+    "stepping_stones": {"rows": 4, "cols": 6, "spacing_x": 0.45, "spacing_y": 0.6, "size": 0.3, "height": 0.3},
+    "triangle": {"count": 4, "length": 0.9, "width": 1.0, "height": 0.8, "angle": 30.0, "gap": 0.28, "stagger": 0.8, "pair_yaw": 90.0, "group_spacing": 1.3, "pair_spacing": 1.18},
     "tire_ring": {"count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10, "upright": False},
     "slalom_poles": {"count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32},
     "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "border": 0.12},
@@ -123,8 +123,8 @@ class PreviewWidget(QWidget):
                     return index
             elif element.kind == "stepping_stones":
                 rows, cols = max(1, int(params.get("rows", 1))), max(1, int(params.get("cols", 9)))
-                spacing_x = float(params.get("spacing_x", params.get("spacing", .85)))
-                spacing_y = float(params.get("spacing_y", params.get("spacing", .85)))
+                spacing_x = float(params.get("spacing_x", params.get("spacing", .45)))
+                spacing_y = float(params.get("spacing_y", params.get("spacing", .6)))
                 if abs(dx) <= cols * spacing_x / 2 + .3 and abs(dy) <= rows * spacing_y / 2 + .3:
                     return index
             elif element.kind in ("triangle", "tire_ring", "slalom_poles"):
@@ -176,9 +176,9 @@ class PreviewWidget(QWidget):
         elif element.kind == "stepping_stones":
             rows = max(1, int(p.get("rows", 1)))
             cols = max(1, int(p.get("cols", p.get("count", 9))))
-            spacing_x = float(p.get("spacing_x", p.get("spacing", .85)))
-            spacing_y = float(p.get("spacing_y", p.get("spacing", .85)))
-            side = float(p.get("size", float(p.get("radius", .34)) * 2))
+            spacing_x = float(p.get("spacing_x", p.get("spacing", .45)))
+            spacing_y = float(p.get("spacing_y", p.get("spacing", .6)))
+            side = float(p.get("size", float(p.get("radius", .15)) * 2))
             for row in range(rows):
                 row_offset = spacing_x / 2 if row % 2 else 0.0
                 for col in range(cols):
@@ -223,7 +223,7 @@ class PreviewWidget(QWidget):
                 pair_slot, group_index = i % 2, i // 2
                 groups = (count + 1) // 2
                 x = (group_index - (groups - 1) / 2) * group_spacing
-                x += -float(p.get("stagger", 0.35)) / 2 if pair_slot == 0 else float(p.get("stagger", 0.35)) / 2
+                x += -float(p.get("stagger", 0.8)) / 2 if pair_slot == 0 else float(p.get("stagger", 0.8)) / 2
                 y = -pair_spacing / 2 if pair_slot == 0 else pair_spacing / 2
                 pair_angle = float(p.get("pair_yaw", 90.0))
                 points_rotation = pair_angle

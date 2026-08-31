@@ -18,19 +18,19 @@ def playground_scene(seed: int = 7) -> ArenaScene:
             "length": 3.2, "width": 2.4, "height": 0.8, "steps": 8,
         }),
         TerrainElement("hollow_stairs", x=0.2, y=2.8, name="hollow_stairs", params={
-            "length": 3.2, "width": 2.4, "height": 0.8, "steps": 8, "thickness": 0.16,
+            "length": 3.2, "width": 2.4, "height": 0.8, "steps": 8, "thickness": 0.05,
         }),
         # Keep the ramp clear of the stairs and the slalom lane below.
         TerrainElement("ramp", x=3.8, y=3.6, name="ramp", params={
             "length": 3.2, "width": 2.4, "height": 0.8, "thickness": 0.16,
         }),
         TerrainElement("stepping_stones", x=-5.8, y=-2.8, name="stepping_stones", params={
-            "rows": 4, "cols": 6, "spacing_x": 0.85, "spacing_y": 0.85,
-            "size": 0.45, "height": 0.45,
+            "rows": 4, "cols": 6, "spacing_x": 0.45, "spacing_y": 0.6,
+            "size": 0.3, "height": 0.3,
         }),
         TerrainElement("triangle", x=-0.8, y=-2.8, name="triangle_obstacle", params={
-            "count": 4, "length": 0.9, "width": 1.8, "height": 0.85,
-            "angle": 30.0, "gap": 0.28, "stagger": 0.35,
+            "count": 4, "length": 0.9, "width": 1.0, "height": 0.85,
+            "angle": 30.0, "gap": 0.28, "stagger": 0.8,
             "pair_yaw": 90.0, "group_spacing": 2.1, "pair_spacing": 1.18,
         }),
         TerrainElement("tire_ring", x=4.4, y=-2.8, name="tire_rings", params={

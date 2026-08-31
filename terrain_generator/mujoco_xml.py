@@ -213,7 +213,7 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         height = float(p.get("height", 0.8))
         steps = max(1, int(p.get("steps", 8)))
         step_length = length / steps
-        thickness = float(p.get("thickness", 0.16)) if element.kind == "hollow_stairs" else None
+        thickness = float(p.get("thickness", 0.05)) if element.kind == "hollow_stairs" else None
         for step_index in range(steps):
             step_height = height * (step_index + 1) / steps
             center_x = -length / 2 + step_length * (step_index + 0.5)
@@ -241,10 +241,10 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
     elif element.kind == "stepping_stones":
         rows = max(1, int(p.get("rows", 1)))
         cols = max(1, int(p.get("cols", p.get("count", 9))))
-        spacing_x = float(p.get("spacing_x", p.get("spacing", 0.85)))
-        spacing_y = float(p.get("spacing_y", p.get("spacing", 0.85)))
-        side = float(p.get("size", p.get("radius", 0.34) * 2))
-        height = float(p.get("height", 0.45))
+        spacing_x = float(p.get("spacing_x", p.get("spacing", 0.45)))
+        spacing_y = float(p.get("spacing_y", p.get("spacing", 0.6)))
+        side = float(p.get("size", p.get("radius", 0.15) * 2))
+        height = float(p.get("height", 0.3))
         index = 0
         for row in range(rows):
             row_offset = spacing_x / 2 if row % 2 else 0.0
@@ -259,7 +259,7 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         length, width, height = _triangle_dimensions(p)
         count = max(1, int(p.get("count", 4)))
         gap = float(p.get("gap", 0.15))
-        stagger = float(p.get("stagger", 0.35))
+        stagger = float(p.get("stagger", 0.8))
         pair_yaw = float(p.get("pair_yaw", 90.0))
         group_spacing = float(p.get("group_spacing", width + gap))
         pair_spacing = float(p.get("pair_spacing", length + gap))
