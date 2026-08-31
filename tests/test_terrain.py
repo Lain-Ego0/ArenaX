@@ -2,7 +2,12 @@ import json
 
 import numpy as np
 
-from terrain_generator import TerrainConfig, export_mujoco, generate_terrain, load_and_validate
+from terrain_generator import (
+    ArenaScene, TerrainConfig, export_mujoco, export_scene, generate_terrain,
+    load_and_validate,
+)
+from terrain_generator.presets import playground_scene
+from terrain_generator.scene import load_scene
 
 
 def test_generation_is_reproducible():
@@ -28,3 +33,36 @@ def test_export_and_mujoco_compile(tmp_path):
     metadata = json.loads(paths["metadata"].read_text(encoding="utf-8"))
     assert metadata["config"]["kind"] == "obstacle_mix"
 
+
+def test_playground_scene_round_trip_and_compile(tmp_path):
+    scene = playground_scene(seed=2)
+    paths = export_scene(scene, tmp_path / "playground")
+    loaded = load_scene(paths["scene"])
+    assert isinstance(loaded, ArenaScene)
+    assert len(loaded.elements) == 7
+    model = load_and_validate(paths["xml"])
+    assert model.nhfield == 1
+    assert model.ngeom == 33
+
+
+def test_export_can_extend_a_base_mujoco_scene(tmp_path):
+    robot_fragment = tmp_path / "robot_fragment.xml"
+    robot_fragment.write_text(
+        '<worldbody><body name="robot_stub" pos="0 0 0.5">'
+        '<freejoint/><geom type="sphere" size="0.1" mass="1"/>'
+        '</body></worldbody>',
+        encoding="utf-8",
+    )
+    base_scene = tmp_path / "robot_scene.xml"
+    base_scene.write_text(
+        '<mujoco model="robot_base"><asset/>'
+        '<include file="robot_fragment.xml"/>'
+        '<worldbody/></mujoco>',
+        encoding="utf-8",
+    )
+    scene = playground_scene(seed=3)
+    scene.base_scene = str(base_scene)
+    paths = export_scene(scene, tmp_path / "with_robot")
+    model = load_and_validate(paths["xml"])
+    assert model.nbody >= 2
+    assert str(robot_fragment.resolve()) in paths["xml"].read_text(encoding="utf-8")

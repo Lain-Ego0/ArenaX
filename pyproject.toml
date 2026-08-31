@@ -7,7 +7,7 @@ name = "mujoco-terrain-generator"
 version = "0.1.0"
 description = "Procedural terrain generator and MuJoCo XML exporter"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.23", "mujoco>=3.0"]
+dependencies = ["numpy>=1.23", "mujoco>=3.0", "PyQt5>=5.15"]
 
 [project.scripts]
 mujoco-terrain = "terrain_generator.cli:main"

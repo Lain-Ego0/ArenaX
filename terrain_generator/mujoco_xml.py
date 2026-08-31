@@ -11,7 +11,7 @@ import zlib
 
 import numpy as np
 
-from .models import TerrainMap
+from .models import TerrainElement, TerrainMap
 
 
 def _png_chunk(kind: bytes, payload: bytes) -> bytes:
@@ -36,32 +36,216 @@ def _indent_xml(root: ET.Element) -> str:
     return ET.tostring(root, encoding="unicode", short_empty_elements=True) + "\n"
 
 
-def build_xml(terrain: TerrainMap, heightfield_filename: str = "terrain.png") -> str:
-    """Build a standalone MuJoCo XML scene referencing a PNG heightfield."""
+def _unique_name(parent: ET.Element, tag: str, base: str) -> str:
+    names = {item.get("name") for item in parent.findall(tag)}
+    if base not in names:
+        return base
+    index = 1
+    while f"{base}_{index}" in names:
+        index += 1
+    return f"{base}_{index}"
+
+
+def _load_base_scene(base_scene_path: str | Path, model_name: str) -> ET.Element:
+    """Load a robot scene template and resolve its relative resources."""
+
+    path = Path(base_scene_path).resolve()
+    root = ET.parse(path).getroot()
+    root.set("model", model_name)
+    for item in root.iter():
+        if item.tag in {"include", "mesh", "hfield", "texture", "skin"} and item.get("file"):
+            resource = Path(item.get("file", ""))
+            if not resource.is_absolute():
+                item.set("file", str((path.parent / resource).resolve()))
+    return root
+
+
+def _ensure_child(parent: ET.Element, tag: str) -> ET.Element:
+    child = parent.find(tag)
+    return child if child is not None else ET.SubElement(parent, tag)
+
+
+def _fmt(values: tuple[float, ...]) -> str:
+    return " ".join(f"{value:.6g}" for value in values)
+
+
+def _local_pose(element: TerrainElement, x: float, y: float, z: float) -> dict[str, str]:
+    """Transform a local element point into a MuJoCo geom pose."""
+
+    angle = np.deg2rad(element.yaw)
+    world_x = element.x + np.cos(angle) * x - np.sin(angle) * y
+    world_y = element.y + np.sin(angle) * x + np.cos(angle) * y
+    return {"pos": _fmt((world_x, world_y, element.z + z))}
+
+
+def _add_box(worldbody: ET.Element, name: str, element: TerrainElement,
+             x: float, y: float, z: float, size: tuple[float, float, float],
+             rgba: str = "0.48 0.30 0.12 1", extra: dict[str, str] | None = None) -> None:
+    attrs = {"name": name, "type": "box", "size": _fmt(size), "rgba": rgba, "friction": "0.8 0.1 0.1"}
+    attrs.update(_local_pose(element, x, y, z))
+    if element.yaw:
+        attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
+    if extra:
+        attrs.update(extra)
+    ET.SubElement(worldbody, "geom", attrs)
+
+
+def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainElement, index: int) -> None:
+    p = element.params
+    prefix = element.name or f"{element.kind}_{index:03d}"
+    rgba = {
+        "platform": "0.16 0.40 0.72 1", "stairs": "0.72 0.42 0.14 1",
+        "hollow_stairs": "0.82 0.56 0.12 1", "ramp": "0.18 0.52 0.28 1",
+        "stepping_stones": "0.35 0.35 0.38 1", "triangle": "0.70 0.18 0.10 1",
+        "tire_ring": "0.04 0.04 0.04 1",
+    }[element.kind]
+
+    if element.kind == "platform":
+        length, width, height = (float(p.get(key, default)) for key, default in (
+            ("length", 2.0), ("width", 2.0), ("height", 0.8)))
+        _add_box(worldbody, prefix, element, 0.0, 0.0, height / 2, (length / 2, width / 2, height / 2), rgba)
+
+    elif element.kind in ("stairs", "hollow_stairs"):
+        length = float(p.get("length", 3.0))
+        width = float(p.get("width", 2.0))
+        height = float(p.get("height", 0.8))
+        steps = max(1, int(p.get("steps", 8)))
+        step_length = length / steps
+        thickness = float(p.get("thickness", 0.16)) if element.kind == "hollow_stairs" else None
+        for step_index in range(steps):
+            step_height = height * (step_index + 1) / steps
+            center_x = -length / 2 + step_length * (step_index + 0.5)
+            block_height = thickness if thickness is not None else step_height
+            center_z = step_height - block_height / 2
+            _add_box(worldbody, f"{prefix}_{step_index:02d}", element, center_x, 0.0, center_z,
+                     (step_length / 2, width / 2, block_height / 2), rgba)
+
+    elif element.kind == "ramp":
+        length = float(p.get("length", 3.0))
+        width = float(p.get("width", 2.0))
+        height = float(p.get("height", 0.8))
+        thickness = max(float(p.get("thickness", 0.16)), 1e-3)
+        angle = -float(np.degrees(np.arctan2(height, length)))
+        attrs = {"euler": _fmt((0.0, angle, element.yaw))}
+        _add_box(worldbody, prefix, element, 0.0, 0.0, height / 2 + thickness / 2,
+                 (length / 2, width / 2, thickness / 2), rgba, attrs)
+
+    elif element.kind == "stepping_stones":
+        count = max(1, int(p.get("count", 9)))
+        spacing = float(p.get("spacing", 0.85))
+        radius = float(p.get("radius", 0.34))
+        height = float(p.get("height", 0.45))
+        # A central post plus a ring gives the characteristic plum-blossom layout.
+        points = [(0.0, 0.0)]
+        for point_index in range(count - 1):
+            angle = 2 * np.pi * point_index / max(count - 1, 1)
+            points.append((spacing * np.cos(angle), spacing * np.sin(angle)))
+        for stone_index, (x, y) in enumerate(points[:count]):
+            attrs = {"name": f"{prefix}_{stone_index:02d}", "type": "cylinder",
+                     "size": _fmt((radius, height / 2)), "rgba": rgba, "friction": "0.8 0.1 0.1"}
+            attrs.update(_local_pose(element, x, y, height / 2))
+            ET.SubElement(worldbody, "geom", attrs)
+
+    elif element.kind == "triangle":
+        length = float(p.get("length", 2.5))
+        width = float(p.get("width", 2.0))
+        height = float(p.get("height", 0.8))
+        mesh_name = f"{prefix}_mesh"
+        lx, wy = length / 2, width / 2
+        vertices = _fmt((-lx, -wy, 0.0, lx, -wy, 0.0, lx, -wy, height,
+                         -lx, wy, 0.0, lx, wy, 0.0, lx, wy, height))
+        faces = "0 1 2 3 4 5 0 1 4 0 4 3 1 2 5 1 5 4 2 0 3 2 3 5"
+        ET.SubElement(asset, "mesh", {"name": mesh_name, "vertex": vertices, "face": faces})
+        attrs = {"name": prefix, "type": "mesh", "mesh": mesh_name, "rgba": rgba, "friction": "0.8 0.1 0.1"}
+        attrs.update(_local_pose(element, 0.0, 0.0, 0.0))
+        if element.yaw:
+            attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
+        ET.SubElement(worldbody, "geom", attrs)
+
+    elif element.kind == "tire_ring":
+        count = max(1, int(p.get("count", 3)))
+        spacing = float(p.get("spacing", 1.1))
+        major = float(p.get("major_radius", 0.52))
+        minor = float(p.get("minor_radius", 0.14))
+        upright = bool(p.get("upright", True))
+        center_offset = (count - 1) * spacing / 2
+        mesh_name = f"{prefix}_mesh"
+        major_segments, minor_segments = 24, 10
+        vertices: list[float] = []
+        faces: list[int] = []
+        for major_index in range(major_segments):
+            major_angle = 2 * np.pi * major_index / major_segments
+            for minor_index in range(minor_segments):
+                minor_angle = 2 * np.pi * minor_index / minor_segments
+                ring_radius = major + minor * np.cos(minor_angle)
+                vertices.extend((
+                    float(ring_radius * np.cos(major_angle)),
+                    float(ring_radius * np.sin(major_angle)),
+                    float(minor * np.sin(minor_angle)),
+                ))
+        for major_index in range(major_segments):
+            for minor_index in range(minor_segments):
+                next_major = (major_index + 1) % major_segments
+                next_minor = (minor_index + 1) % minor_segments
+                a = major_index * minor_segments + minor_index
+                b = next_major * minor_segments + minor_index
+                c = next_major * minor_segments + next_minor
+                d = major_index * minor_segments + next_minor
+                faces.extend((a, b, c, a, c, d))
+        ET.SubElement(asset, "mesh", {
+            "name": mesh_name,
+            "vertex": _fmt(tuple(vertices)),
+            "face": " ".join(str(value) for value in faces),
+        })
+        for tire_index in range(count):
+            x = tire_index * spacing - center_offset
+            z = major + minor if upright else minor
+            attrs = {"name": f"{prefix}_{tire_index:02d}", "type": "mesh",
+                     "mesh": mesh_name, "rgba": rgba, "friction": "0.8 0.1 0.1"}
+            attrs.update(_local_pose(element, x, 0.0, z))
+            if upright:
+                attrs["euler"] = _fmt((0.0, 90.0, element.yaw))
+            elif element.yaw:
+                attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
+            ET.SubElement(worldbody, "geom", attrs)
+
+
+def build_xml(terrain: TerrainMap, heightfield_filename: str = "terrain.png",
+              elements: list[TerrainElement] | None = None, model_name: str | None = None,
+              include_test_ball: bool = True,
+              base_scene_path: str | Path | None = None) -> str:
+    """Build a standalone MuJoCo XML scene with optional obstacle components."""
 
     config = terrain.config
-    root = ET.Element("mujoco", {"model": f"terrain_{config.kind}"})
-    ET.SubElement(root, "compiler", {"angle": "degree", "coordinate": "local"})
-    ET.SubElement(root, "option", {"gravity": "0 0 -9.81", "integrator": "RK4"})
+    scene_name = model_name or f"terrain_{config.kind}"
+    root = (_load_base_scene(base_scene_path, scene_name) if base_scene_path
+            else ET.Element("mujoco", {"model": scene_name}))
+    if root.find("compiler") is None:
+        ET.SubElement(root, "compiler", {"angle": "degree", "coordinate": "local"})
+    if root.find("option") is None:
+        ET.SubElement(root, "option", {"gravity": "0 0 -9.81", "integrator": "RK4"})
 
-    asset = ET.SubElement(root, "asset")
+    asset = _ensure_child(root, "asset")
+    texture_name = _unique_name(asset, "texture", "terrain_texture")
+    material_name = _unique_name(asset, "material", "terrain_material")
+    hfield_name = _unique_name(asset, "hfield", "terrain")
     ET.SubElement(asset, "texture", {
-        "name": "terrain_texture", "type": "2d", "builtin": "gradient",
+        "name": texture_name, "type": "2d", "builtin": "gradient",
         "rgb1": "0.22 0.34 0.16", "rgb2": "0.55 0.40 0.18", "width": "256", "height": "256",
     })
-    ET.SubElement(asset, "material", {"name": "terrain_material", "texture": "terrain_texture", "texrepeat": "4 4"})
+    ET.SubElement(asset, "material", {"name": material_name, "texture": texture_name, "texrepeat": "4 4"})
     ET.SubElement(asset, "hfield", {
-        "name": "terrain", "file": heightfield_filename,
+        "name": hfield_name, "file": heightfield_filename,
         # MuJoCo requires all hfield size entries to be strictly positive;
         # the tiny base keeps the physical ground effectively at z=0.
         "size": f"{config.length / 2:.6g} {config.width / 2:.6g} {max(config.height, 1e-6):.6g} 1e-6",
     })
 
-    worldbody = ET.SubElement(root, "worldbody")
+    worldbody = _ensure_child(root, "worldbody")
     ET.SubElement(worldbody, "light", {"pos": "0 0 8", "directional": "true", "dir": "0 0 -1"})
     ET.SubElement(worldbody, "geom", {
-        "name": "terrain", "type": "hfield", "hfield": "terrain",
-        "material": "terrain_material", "contype": "1", "conaffinity": "1",
+        "name": _unique_name(worldbody, "geom", "terrain"), "type": "hfield", "hfield": hfield_name,
+        "material": material_name, "contype": "1", "conaffinity": "1",
     })
     for index, obstacle in enumerate(terrain.obstacles):
         ET.SubElement(worldbody, "geom", {
@@ -71,14 +255,21 @@ def build_xml(terrain: TerrainMap, heightfield_filename: str = "terrain.png") ->
             "rgba": "0.55 0.12 0.08 1", "friction": "0.8 0.1 0.1",
         })
 
-    # A small free body makes the generated scene immediately useful for a smoke test.
-    body = ET.SubElement(worldbody, "body", {"name": "test_ball", "pos": "0 0 1.5"})
-    ET.SubElement(body, "freejoint")
-    ET.SubElement(body, "geom", {"name": "ball", "type": "sphere", "size": "0.18", "mass": "1", "rgba": "0.1 0.35 0.9 1"})
+    for index, element in enumerate(elements or ()):
+        _add_element(asset, worldbody, element, index)
+
+    if include_test_ball:
+        # A small free body makes the generated scene immediately useful for a smoke test.
+        body = ET.SubElement(worldbody, "body", {"name": "test_ball", "pos": "0 0 1.5"})
+        ET.SubElement(body, "freejoint")
+        ET.SubElement(body, "geom", {"name": "ball", "type": "sphere", "size": "0.18", "mass": "1", "rgba": "0.1 0.35 0.9 1"})
     return _indent_xml(root)
 
 
-def export_mujoco(terrain: TerrainMap, output_dir: str | Path) -> dict[str, Path]:
+def export_mujoco(terrain: TerrainMap, output_dir: str | Path,
+                  elements: list[TerrainElement] | None = None,
+                  model_name: str | None = None, include_test_ball: bool = True,
+                  base_scene: str | Path | None = None) -> dict[str, Path]:
     """Write ``terrain.xml``, ``terrain.png`` and ``terrain.json``."""
 
     directory = Path(output_dir)
@@ -87,12 +278,15 @@ def export_mujoco(terrain: TerrainMap, output_dir: str | Path) -> dict[str, Path
     xml_path = directory / "terrain.xml"
     json_path = directory / "terrain.json"
     _write_png(png_path, terrain.heights)
-    xml_path.write_text(build_xml(terrain), encoding="utf-8")
+    xml_path.write_text(build_xml(terrain, elements=elements, model_name=model_name,
+                                  include_test_ball=include_test_ball,
+                                  base_scene_path=base_scene), encoding="utf-8")
     metadata = {
         "config": terrain.config.to_dict(),
         "height_min": float(terrain.heights.min()),
         "height_max": float(terrain.heights.max()),
         "obstacles": [asdict(obstacle) for obstacle in terrain.obstacles],
+        "elements": [element.to_dict() for element in (elements or [])],
     }
     json_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return {"xml": xml_path, "heightfield": png_path, "metadata": json_path}

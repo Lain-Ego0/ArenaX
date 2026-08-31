@@ -7,6 +7,15 @@ import numpy as np
 
 
 SUPPORTED_TERRAIN_TYPES = ("flat", "slope", "stairs", "noise", "obstacle_mix")
+SUPPORTED_ELEMENT_TYPES = (
+    "platform",
+    "stairs",
+    "hollow_stairs",
+    "ramp",
+    "stepping_stones",
+    "triangle",
+    "tire_ring",
+)
 
 
 @dataclass(slots=True)
@@ -63,6 +72,62 @@ class Obstacle:
 
 
 @dataclass(slots=True)
+class TerrainElement:
+    """A reusable obstacle component placed in the arena.
+
+    ``params`` contains dimensions specific to ``kind``. Coordinates are in
+    meters, with the element's local X axis rotated by ``yaw`` around Z.
+    """
+
+    kind: str
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    yaw: float = 0.0
+    params: dict[str, Any] = field(default_factory=dict)
+    name: str = ""
+
+    def __post_init__(self) -> None:
+        self.kind = self.kind.lower().strip()
+        if self.kind not in SUPPORTED_ELEMENT_TYPES:
+            raise ValueError(f"kind must be one of {SUPPORTED_ELEMENT_TYPES}, got {self.kind!r}")
+        if not np.isfinite([self.x, self.y, self.z, self.yaw]).all():
+            raise ValueError("element pose must contain only finite values")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class ArenaScene:
+    """A complete robot play/test arena."""
+
+    terrain: TerrainConfig
+    elements: list[TerrainElement] = field(default_factory=list)
+    name: str = "arena"
+    base_scene: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "base_scene": self.base_scene,
+            "terrain": self.terrain.to_dict(),
+            "elements": [element.to_dict() for element in self.elements],
+        }
+
+    @classmethod
+    def from_dict(cls, values: dict[str, Any]) -> "ArenaScene":
+        terrain_values = dict(values.get("terrain", {}))
+        elements = [TerrainElement(**item) for item in values.get("elements", [])]
+        return cls(
+            name=str(values.get("name", "arena")),
+            terrain=TerrainConfig(**terrain_values),
+            elements=elements,
+            base_scene=values.get("base_scene"),
+        )
+
+
+@dataclass(slots=True)
 class TerrainMap:
     """Heightfield plus the physical dimensions needed to export it."""
 
@@ -80,4 +145,3 @@ class TerrainMap:
         if not np.isfinite(self.heights).all():
             raise ValueError("heights must contain only finite values")
         self.heights = np.clip(self.heights, 0.0, 1.0)
-

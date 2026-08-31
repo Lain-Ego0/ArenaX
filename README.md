@@ -6,7 +6,9 @@
 - MuJoCo 可读取的 PNG 高度图
 - 描述生成参数的 JSON 元数据
 
-当前内置地形类型：`flat`、`slope`、`stairs`、`noise`、`obstacle_mix`。
+当前内置基础地形类型：`flat`、`slope`、`stairs`、`noise`、`obstacle_mix`。
+
+机器人 play 测试障碍组件：高台、台阶、镂空台阶、斜坡、梅花桩、三角障碍、轮胎圈。
 
 ## 快速开始
 
@@ -52,6 +54,59 @@ python3 -m terrain_generator.cli \
 
 窗口打开后可以用鼠标旋转、缩放和移动视角；关闭窗口即可结束程序。`--validate --view` 可以同时编译检查并打开窗口。
 
+一键生成包含全部常用障碍的标准测试场地：
+
+```bash
+python3 -m terrain_generator.cli \
+  --preset playground \
+  --output generated/playground \
+  --validate \
+  --view
+```
+
+如果已有宇树机器人场景（例如包含 `go2.xml` 的 `scene.xml`），可以直接在其基础上追加障碍：
+
+```bash
+python3 -m terrain_generator.cli \
+  --preset playground \
+  --base-scene /path/to/unitree_mujoco/terrain_tool/scene.xml \
+  --output generated/go2_playground \
+  --validate \
+  --view \
+  --no-test-ball
+```
+
+导出的 XML 会保留基础场景中的机器人 include、asset 和 worldbody 内容，并把相对资源路径转换为可加载的路径。
+
+## 蓝白色 PyQt 图形化编辑器
+
+编辑器使用蓝白色界面：左侧选择障碍类型和管理组件，中间是场地俯视预览，右侧可以修改位置、朝向和障碍参数。点击场地放置或修改参数后，中央预览会立即更新。
+
+```bash
+python3 -m terrain_generator.cli \
+  --edit \
+  --output generated/my_arena
+```
+
+编辑器会导出 `terrain.xml`、`terrain.png`、`terrain.json` 和 `scene.json`。如果需要直接加载宇树机器人场景，可以这样启动：
+
+```bash
+python3 -m terrain_generator.cli \
+  --edit \
+  --base-scene /path/to/unitree_mujoco/terrain_tool/scene.xml \
+  --output generated/go2_arena
+```
+
+点击“导出并打开 MuJoCo”可以在导出后自动打开三维仿真窗口。以后也可以直接回读并可视化场景：
+
+```bash
+python3 -m terrain_generator.cli \
+  --scene generated/my_arena/scene.json \
+  --output generated/my_arena_export \
+  --validate \
+  --view
+```
+
 在 Python 中使用：
 
 ```python
@@ -71,7 +126,7 @@ export_mujoco(terrain, "generated/obstacle_mix")
 ## 后续扩展方向
 
 - 增加 Perlin/Simplex 噪声和侵蚀模拟
-- 支持圆柱、台阶、沟壑等局部地形组件
-- 增加 viewer 与机器人 spawn pose
+- 支持编辑器中的障碍尺寸、朝向和参数面板
+- 增加机器人 spawn pose、路线和碰撞测试配置
 - 输出 PNG/OBJ/PLY 以及批量场景配置
 - 接入 Gymnasium / dm_control 环境
