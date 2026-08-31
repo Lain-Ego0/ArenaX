@@ -12,7 +12,7 @@ from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QBrush, QPolygonF
 from PyQt5.QtWidgets import (
     QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
-    QMessageBox, QPushButton, QCheckBox, QSpinBox, QSplitter, QStatusBar, QVBoxLayout,
+    QMessageBox, QPushButton, QSpinBox, QSplitter, QStatusBar, QVBoxLayout,
     QWidget,
 )
 
@@ -86,8 +86,10 @@ class PreviewWidget(QWidget):
         self.setMinimumSize(700, 520)
         self.setMouseTracking(True)
         self.hover_world: tuple[float, float] | None = None
-        self.interaction_mode = "place"
         self.element_action = None
+        self.element_moved = None
+        self.drag_index: int | None = None
+        self.edit_mode = False
 
     def set_scene(self, scene: ArenaScene) -> None:
         self.arena = scene
@@ -218,7 +220,10 @@ class PreviewWidget(QWidget):
             spacing = float(p.get("spacing", length + float(p.get("gap", .28))))
             for i in range(count):
                 x = (i - (count - 1) / 2) * spacing
-                points = [(-length / 2 + x, -width / 2), (length / 2 + x, 0), (-length / 2 + x, width / 2)]
+                if i % 2 == 0:
+                    points = [(length / 2 + x, -width / 2), (-length / 2 + x, 0), (length / 2 + x, width / 2)]
+                else:
+                    points = [(-length / 2 + x, -width / 2), (length / 2 + x, 0), (-length / 2 + x, width / 2)]
                 painter.drawPolygon(self.polygon(element, points))
 
     def paintEvent(self, _event) -> None:
@@ -251,14 +256,31 @@ class PreviewWidget(QWidget):
             painter.drawLine(self.world_to_view(-config.length / 2, y), self.world_to_view(config.length / 2, y))
         painter.end()
 
-    def mouseMoveEvent(self, event) -> None:
-        self.hover_world = self.view_to_world(event.x(), event.y())
-        self.update()
-
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton and self.element_action:
             x, y = self.view_to_world(event.x(), event.y())
-            self.element_action(x, y, bool(event.modifiers() & Qt.ControlModifier))
+            ctrl = bool(event.modifiers() & Qt.ControlModifier)
+            hit = self.hit_test(x, y)
+            if hit is not None:
+                self.drag_index = hit
+                self.edit_mode = ctrl
+            else:
+                self.drag_index = None
+                self.edit_mode = False
+            self.element_action(x, y, ctrl)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.drag_index = None
+
+    def mouseMoveEvent(self, event) -> None:
+        self.hover_world = self.view_to_world(event.x(), event.y())
+        if self.drag_index is not None and self.edit_mode and self.drag_index < len(self.arena.elements):
+            element = self.arena.elements[self.drag_index]
+            element.x, element.y = self.hover_world
+            if self.element_moved:
+                self.element_moved(self.drag_index, *self.hover_world)
+        self.update()
 
 
 class QtArenaEditor(QMainWindow):
@@ -295,16 +317,9 @@ class QtArenaEditor(QMainWindow):
         self.tool_combo.currentIndexChanged.connect(self.tool_changed)
         left_layout.addWidget(QLabel("放置障碍类型"))
         left_layout.addWidget(self.tool_combo)
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem("放置模式", "place")
-        self.mode_combo.addItem("选择模式", "select")
-        self.mode_combo.addItem("删除模式", "delete")
-        self.mode_combo.currentIndexChanged.connect(self.mode_changed)
-        left_layout.addWidget(QLabel("画布操作模式"))
-        left_layout.addWidget(self.mode_combo)
-        left_layout.addWidget(QLabel("放置后不会自动切换工具；可继续操作"))
+        left_layout.addWidget(QLabel("点击空白处添加；点击障碍选中。Ctrl+点击进入拖动编辑"))
         self.element_list = QListWidget()
-        self.element_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.element_list.setSelectionMode(QListWidget.SingleSelection)
         self.element_list.currentRowChanged.connect(self.select_element)
         left_layout.addWidget(self.element_list, 1)
         self.preset_button = QPushButton("载入标准测试场地")
@@ -320,24 +335,12 @@ class QtArenaEditor(QMainWindow):
 
         self.preview = PreviewWidget(self.scene)
         self.preview.element_action = self.handle_preview_click
+        self.preview.element_moved = self.handle_element_moved
         splitter.addWidget(self.preview)
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
-        right_layout.addWidget(QLabel("实时参数"))
-        form_box = QGroupBox("选中障碍")
-        form = QFormLayout(form_box)
-        self.x_spin = self.make_spin()
-        self.y_spin = self.make_spin()
-        self.z_spin = self.make_spin()
-        self.yaw_spin = self.make_spin(-180, 180, 1)
-        for spin in (self.x_spin, self.y_spin, self.z_spin, self.yaw_spin):
-            spin.valueChanged.connect(self.update_selected)
-        form.addRow("X (m)", self.x_spin)
-        form.addRow("Y (m)", self.y_spin)
-        form.addRow("Z (m)", self.z_spin)
-        form.addRow("Yaw (deg)", self.yaw_spin)
-        right_layout.addWidget(form_box)
+        right_layout.addWidget(QLabel("障碍编辑"))
         self.params_box = QGroupBox("障碍参数（填写后实时预览）")
         self.params_form = QFormLayout(self.params_box)
         self.param_widgets: dict[str, QWidget] = {}
@@ -346,7 +349,7 @@ class QtArenaEditor(QMainWindow):
         self.delete_action = QPushButton("✕ 删除")
         self.delete_action.setObjectName("deleteAction")
         self.delete_action.clicked.connect(self.delete_selected)
-        self.confirm_action = QPushButton("✓ 确认 / 应用")
+        self.confirm_action = QPushButton("✓ 保存障碍")
         self.confirm_action.setObjectName("confirmAction")
         self.confirm_action.clicked.connect(self.confirm_selected)
         action_row.addWidget(self.delete_action)
@@ -358,9 +361,6 @@ class QtArenaEditor(QMainWindow):
             button = QPushButton(text)
             button.clicked.connect(lambda _checked=False, value=angle: self.rotate_selected(value))
             rotate_layout.addWidget(button)
-        self.snap_check = QCheckBox("Yaw 自动吸附")
-        self.snap_check.setChecked(True)
-        rotate_layout.addWidget(self.snap_check)
         right_layout.addWidget(rotate_box)
         self.error_label = QLabel("")
         self.error_label.setObjectName("error")
@@ -382,7 +382,7 @@ class QtArenaEditor(QMainWindow):
         splitter.addWidget(right)
         splitter.setSizes([250, 850, 330])
         self.setStatusBar(QStatusBar())
-        self.statusBar().showMessage("选择障碍类型后，在中央场地点击放置；修改参数会实时更新预览")
+        self.statusBar().showMessage("点击空白处新增障碍，点击障碍选中；Ctrl+点击可拖动编辑")
         self.rebuild_param_form(self.current_kind(), DEFAULT_PARAMS[self.current_kind()])
 
     @staticmethod
@@ -414,26 +414,25 @@ class QtArenaEditor(QMainWindow):
     def current_kind(self) -> str:
         return str(self.tool_combo.currentData())
 
-    def mode_changed(self, _index: int) -> None:
-        self.preview.interaction_mode = str(self.mode_combo.currentData())
-        labels = {"place": "放置模式：点击场地添加障碍", "select": "选择模式：点击选中，Ctrl 可多选", "delete": "删除模式：点击选中障碍，再点击红色删除"}
-        self.statusBar().showMessage(labels[self.preview.interaction_mode])
-
     def handle_preview_click(self, x: float, y: float, ctrl: bool) -> None:
-        mode = str(self.mode_combo.currentData())
-        if mode == "place":
-            self.add_element_at(x, y)
-            return
         index = self.preview.hit_test(x, y)
         if index is None:
+            self.add_element_at(x, y)
             return
-        if ctrl:
-            item = self.element_list.item(index)
-            item.setSelected(not item.isSelected())
-        else:
-            self.element_list.clearSelection()
+        self.element_list.clearSelection()
+        self.element_list.setCurrentRow(index)
+        self.element_list.item(index).setSelected(True)
+        self.preview.edit_mode = ctrl
+        self.statusBar().showMessage("单障碍编辑：拖动障碍调整位置；使用右侧旋转按钮，确认后保存或删除" if ctrl else "已选中障碍（Ctrl+点击可进入拖动编辑）")
+
+    def handle_element_moved(self, index: int, x: float, y: float) -> None:
+        if 0 <= index < len(self.scene.elements):
+            self.scene.elements[index].x = x
+            self.scene.elements[index].y = y
+            self.selected_index = index
+            self.preview.selected_index = index
             self.element_list.setCurrentRow(index)
-            self.element_list.item(index).setSelected(True)
+            self.preview.update()
 
     def tool_changed(self, _index: int) -> None:
         self.rebuild_param_form(self.current_kind(), DEFAULT_PARAMS[self.current_kind()])
@@ -491,12 +490,6 @@ class QtArenaEditor(QMainWindow):
         self.preview.selected_index = self.selected_index
         if self.selected_index is not None:
             element = self.scene.elements[self.selected_index]
-            self.x_spin.blockSignals(True); self.y_spin.blockSignals(True)
-            self.z_spin.blockSignals(True); self.yaw_spin.blockSignals(True)
-            self.x_spin.setValue(element.x); self.y_spin.setValue(element.y)
-            self.z_spin.setValue(element.z); self.yaw_spin.setValue(element.yaw)
-            self.x_spin.blockSignals(False); self.y_spin.blockSignals(False)
-            self.z_spin.blockSignals(False); self.yaw_spin.blockSignals(False)
             self.tool_combo.blockSignals(True)
             self.tool_combo.setCurrentIndex(self.tool_combo.findData(element.kind))
             self.tool_combo.blockSignals(False)
@@ -506,19 +499,7 @@ class QtArenaEditor(QMainWindow):
     def update_selected(self) -> None:
         if self.selected_index is None or self.selected_index >= len(self.scene.elements):
             return
-        # Position/dimension editing is intentionally single-selection. Batch
-        # selection remains available for delete and quick rotation below.
-        if len(self.selected_indices()) > 1:
-            return
         element = self.scene.elements[self.selected_index]
-        element.x, element.y, element.z = (self.x_spin.value(), self.y_spin.value(), self.z_spin.value())
-        yaw = self.yaw_spin.value()
-        if self.snap_check.isChecked():
-            yaw = round(yaw / 90.0) * 90.0
-            self.yaw_spin.blockSignals(True)
-            self.yaw_spin.setValue(yaw)
-            self.yaw_spin.blockSignals(False)
-        element.yaw = yaw
         element.params = self.read_params()
         self.error_label.setText("")
         self.preview.update()

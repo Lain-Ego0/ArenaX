@@ -118,10 +118,16 @@ def _add_wedge_mesh(asset: ET.Element, mesh_name: str, length: float,
     """Create a closed triangular-prism wedge with its bottom on z=0."""
 
     lx, wy = length / 2, width / 2
-    x0, x1 = (lx, -lx) if reverse else (-lx, lx)
-    vertices = _fmt((x0, -wy, 0.0, x1, -wy, 0.0, x1, -wy, height,
-                     x0, wy, 0.0, x1, wy, 0.0, x1, wy, height))
-    faces = "0 1 2 3 4 5 0 1 4 0 4 3 1 2 5 1 5 4 2 0 3 2 3 5"
+    low_x, high_x = (lx, -lx) if reverse else (-lx, lx)
+    vertices = _fmt((low_x, -wy, 0.0, high_x, -wy, 0.0, high_x, -wy, height,
+                     low_x, wy, 0.0, high_x, wy, 0.0, high_x, wy, height))
+    # bottom, two triangular side faces, vertical end and the sloped top;
+    # explicitly closing the top fixes the invisible/open ramp and triangle cap.
+    triangles = [(0, 4, 1), (0, 3, 4), (0, 1, 2), (3, 5, 4),
+                 (1, 5, 2), (1, 4, 5), (0, 2, 5), (0, 5, 3)]
+    if reverse:
+        triangles = [(a, c, b) for a, b, c in triangles]
+    faces = " ".join("%d %d %d" % triangle for triangle in triangles)
     ET.SubElement(asset, "mesh", {"name": mesh_name, "vertex": vertices, "face": faces})
 
 
@@ -194,7 +200,9 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         gap = float(p.get("gap", 0.15))
         spacing = float(p.get("spacing", length + gap))
         for triangle_index in range(count):
-            reverse = triangle_index % 2 == 1
+            # Face the sloped sides toward adjacent obstacles; this keeps the
+            # vertical backs on the outside of the alternating row.
+            reverse = triangle_index % 2 == 0
             mesh_name = f"{prefix}_mesh_{int(reverse)}"
             if not any(mesh.get("name") == mesh_name for mesh in asset.findall("mesh")):
                 _add_wedge_mesh(asset, mesh_name, length, width, height, reverse=reverse)
