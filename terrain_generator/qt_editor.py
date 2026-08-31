@@ -40,7 +40,7 @@ DEFAULT_PARAMS = {
     "hollow_stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8, "thickness": 0.16},
     "ramp": {"length": 3.0, "width": 2.0, "height": 0.8, "thickness": 0.16},
     "stepping_stones": {"rows": 4, "cols": 6, "spacing_x": 0.85, "spacing_y": 0.85, "size": 0.45, "height": 0.45},
-    "triangle": {"count": 4, "length": 0.9, "width": 1.8, "height": 0.8, "gap": 0.28},
+    "triangle": {"count": 4, "length": 0.9, "width": 1.8, "height": 0.8, "gap": 0.28, "stagger": 0.35},
     "tire_ring": {"count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10, "upright": False},
     "slalom_poles": {"count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32},
     "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "border": 0.12},
@@ -53,7 +53,7 @@ PARAM_SCHEMA = {
     "hollow_stairs": [("length", "总长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "总高度", "m", "float"), ("steps", "级数", "级", "int"), ("thickness", "踏板厚度", "m", "float")],
     "ramp": [("length", "长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "高度", "m", "float")],
     "stepping_stones": [("rows", "行数", "行", "int"), ("cols", "列数", "列", "int"), ("spacing_x", "横向间距", "m", "float"), ("spacing_y", "纵向间距", "m", "float"), ("size", "方柱边长", "m", "float"), ("height", "方柱高度", "m", "float")],
-    "triangle": [("count", "数量", "个", "int"), ("length", "单个长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "高度", "m", "float"), ("gap", "间隙", "m", "float")],
+    "triangle": [("count", "数量", "个", "int"), ("length", "单个长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "高度", "m", "float"), ("gap", "间隙", "m", "float"), ("stagger", "左右错位", "m", "float")],
     "tire_ring": [("count", "数量", "个", "int"), ("spacing", "间距", "m", "float"), ("major_radius", "轮胎主半径", "m", "float"), ("minor_radius", "轮胎厚度", "m", "float"), ("upright", "竖放", "", "bool")],
     "slalom_poles": [("count", "杆数", "根", "int"), ("spacing", "杆间距", "m", "float"), ("radius", "杆半径", "m", "float"), ("height", "杆高", "m", "float"), ("zigzag", "交错距离", "m", "float")],
     "sandpit": [("length", "长度", "m", "float"), ("width", "宽度", "m", "float"), ("depth", "深度", "m", "float"), ("border", "边框宽度", "m", "float")],
@@ -220,10 +220,11 @@ class PreviewWidget(QWidget):
             spacing = float(p.get("spacing", length + float(p.get("gap", .28))))
             for i in range(count):
                 x = (i - (count - 1) / 2) * spacing
+                y = float(p.get("stagger", 0.35)) * (1 if i % 2 == 0 else -1)
                 if i % 2 == 0:
-                    points = [(length / 2 + x, -width / 2), (-length / 2 + x, 0), (length / 2 + x, width / 2)]
+                    points = [(length / 2 + x, -width / 2 + y), (-length / 2 + x, y), (length / 2 + x, width / 2 + y)]
                 else:
-                    points = [(-length / 2 + x, -width / 2), (length / 2 + x, 0), (-length / 2 + x, width / 2)]
+                    points = [(-length / 2 + x, -width / 2 + y), (length / 2 + x, y), (-length / 2 + x, width / 2 + y)]
                 painter.drawPolygon(self.polygon(element, points))
 
     def paintEvent(self, _event) -> None:

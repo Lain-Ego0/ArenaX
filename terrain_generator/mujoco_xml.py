@@ -113,6 +113,57 @@ def _add_box(worldbody: ET.Element, name: str, element: TerrainElement,
     ET.SubElement(worldbody, "geom", attrs)
 
 
+def _append_box_mesh(vertices: list[float], faces: list[int],
+                     center: tuple[float, float, float], half: tuple[float, float, float]) -> None:
+    """Append a closed cuboid to a mesh, allowing several solids in one geom."""
+    cx, cy, cz = center
+    hx, hy, hz = half
+    base = len(vertices) // 3
+    vertices.extend((cx - hx, cy - hy, cz - hz, cx + hx, cy - hy, cz - hz,
+                     cx + hx, cy + hy, cz - hz, cx - hx, cy + hy, cz - hz,
+                     cx - hx, cy - hy, cz + hz, cx + hx, cy - hy, cz + hz,
+                     cx + hx, cy + hy, cz + hz, cx - hx, cy + hy, cz + hz))
+    faces.extend((base + 0, base + 2, base + 1, base + 0, base + 3, base + 2,
+                  base + 4, base + 5, base + 6, base + 4, base + 6, base + 7,
+                  base + 0, base + 1, base + 5, base + 0, base + 5, base + 4,
+                  base + 1, base + 2, base + 6, base + 1, base + 6, base + 5,
+                  base + 2, base + 3, base + 7, base + 2, base + 7, base + 6,
+                  base + 3, base + 0, base + 4, base + 3, base + 4, base + 7))
+
+
+def _add_open_stair_mesh(asset: ET.Element, worldbody: ET.Element,
+                         element: TerrainElement, name: str, length: float,
+                         width: float, height: float, steps: int,
+                         thickness: float, rgba: str) -> None:
+    """Create one tread plus two side supports as a single open industrial step."""
+    step_length = length / steps
+    vertices: list[float] = []
+    faces: list[int] = []
+    step_index = int(name.rsplit("_", 1)[-1])
+    step_height = height * (step_index + 1) / steps
+    center_x = -length / 2 + step_length * (step_index + 0.5)
+    _append_box_mesh(vertices, faces, (center_x, 0.0, step_height - thickness / 2),
+                     (step_length / 2, width / 2, thickness / 2))
+    support_depth = min(0.16, max(step_length * 0.28, 0.06))
+    support_width = min(0.14, max(width * 0.08, 0.06))
+    previous_height = height * step_index / steps
+    support_height = max(step_height - previous_height, thickness)
+    support_x = -length / 2 + step_length * step_index
+    for side in (-1, 1):
+        support_y = side * (width / 2 - support_width / 2)
+        _append_box_mesh(vertices, faces, (support_x, support_y, previous_height + support_height / 2),
+                         (support_depth / 2, support_width / 2, support_height / 2))
+    mesh_name = f"{name}_mesh"
+    ET.SubElement(asset, "mesh", {"name": mesh_name, "vertex": _fmt(tuple(vertices)),
+                                   "face": " ".join(str(value) for value in faces)})
+    attrs = {"name": name, "type": "mesh", "mesh": mesh_name,
+             "rgba": rgba, "friction": "0.8 0.1 0.1"}
+    attrs.update(_local_pose(element, 0.0, 0.0, 0.0))
+    if element.yaw:
+        attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
+    ET.SubElement(worldbody, "geom", attrs)
+
+
 def _add_wedge_mesh(asset: ET.Element, mesh_name: str, length: float,
                     width: float, height: float, reverse: bool = False) -> None:
     """Create a closed triangular-prism wedge with its bottom on z=0."""
@@ -157,10 +208,13 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         for step_index in range(steps):
             step_height = height * (step_index + 1) / steps
             center_x = -length / 2 + step_length * (step_index + 0.5)
-            block_height = thickness if thickness is not None else step_height
-            center_z = step_height - block_height / 2
-            _add_box(worldbody, f"{prefix}_{step_index:02d}", element, center_x, 0.0, center_z,
-                     (step_length / 2, width / 2, block_height / 2), rgba)
+            if thickness is not None:
+                _add_open_stair_mesh(asset, worldbody, element, f"{prefix}_{step_index:02d}",
+                                     length, width, height, steps, thickness, rgba)
+            else:
+                center_z = step_height - step_height / 2
+                _add_box(worldbody, f"{prefix}_{step_index:02d}", element, center_x, 0.0, center_z,
+                         (step_length / 2, width / 2, step_height / 2), rgba)
 
     elif element.kind == "ramp":
         length = float(p.get("length", 3.0))
@@ -198,6 +252,7 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         height = float(p.get("height", 0.8))
         count = max(1, int(p.get("count", 4)))
         gap = float(p.get("gap", 0.15))
+        stagger = float(p.get("stagger", 0.35))
         spacing = float(p.get("spacing", length + gap))
         for triangle_index in range(count):
             # Face the sloped sides toward adjacent obstacles; this keeps the
@@ -207,9 +262,10 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
             if not any(mesh.get("name") == mesh_name for mesh in asset.findall("mesh")):
                 _add_wedge_mesh(asset, mesh_name, length, width, height, reverse=reverse)
             local_x = (triangle_index - (count - 1) / 2) * spacing
+            local_y = stagger if triangle_index % 2 == 0 else -stagger
             attrs = {"name": f"{prefix}_{triangle_index:02d}", "type": "mesh", "mesh": mesh_name,
                      "rgba": rgba, "friction": "0.8 0.1 0.1"}
-            attrs.update(_local_pose(element, local_x, 0.0, 0.0))
+            attrs.update(_local_pose(element, local_x, local_y, 0.0))
             if element.yaw:
                 attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
             ET.SubElement(worldbody, "geom", attrs)

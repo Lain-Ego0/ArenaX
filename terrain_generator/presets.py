@@ -20,7 +20,8 @@ def playground_scene(seed: int = 7) -> ArenaScene:
         TerrainElement("hollow_stairs", x=0.2, y=2.8, name="hollow_stairs", params={
             "length": 3.2, "width": 2.4, "height": 0.8, "steps": 8, "thickness": 0.16,
         }),
-        TerrainElement("ramp", x=4.1, y=2.8, name="ramp", params={
+        # Keep the ramp clear of the stairs and the slalom lane below.
+        TerrainElement("ramp", x=3.8, y=3.6, name="ramp", params={
             "length": 3.2, "width": 2.4, "height": 0.8, "thickness": 0.16,
         }),
         TerrainElement("stepping_stones", x=-5.8, y=-2.8, name="stepping_stones", params={
@@ -29,13 +30,14 @@ def playground_scene(seed: int = 7) -> ArenaScene:
         }),
         TerrainElement("triangle", x=-0.8, y=-2.8, name="triangle_obstacle", params={
             "count": 4, "length": 0.9, "width": 1.8, "height": 0.85,
-            "gap": 0.28,
+            "gap": 0.28, "stagger": 0.35,
         }),
         TerrainElement("tire_ring", x=4.4, y=-2.8, name="tire_rings", params={
             "count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10,
             "upright": False,
         }),
-        TerrainElement("slalom_poles", x=7.2, y=2.8, name="slalom_poles", params={
+        # Move obstacle 8 away from both the ramp and the high wall.
+        TerrainElement("slalom_poles", x=7.2, y=1.5, name="slalom_poles", params={
             "count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32,
         }),
         TerrainElement("sandpit", x=7.0, y=-2.8, name="sandpit", params={
