@@ -114,12 +114,13 @@ def _add_box(worldbody: ET.Element, name: str, element: TerrainElement,
 
 
 def _add_wedge_mesh(asset: ET.Element, mesh_name: str, length: float,
-                    width: float, height: float) -> None:
+                    width: float, height: float, reverse: bool = False) -> None:
     """Create a closed triangular-prism wedge with its bottom on z=0."""
 
     lx, wy = length / 2, width / 2
-    vertices = _fmt((-lx, -wy, 0.0, lx, -wy, 0.0, lx, -wy, height,
-                     -lx, wy, 0.0, lx, wy, 0.0, lx, wy, height))
+    x0, x1 = (lx, -lx) if reverse else (-lx, lx)
+    vertices = _fmt((x0, -wy, 0.0, x1, -wy, 0.0, x1, -wy, height,
+                     x0, wy, 0.0, x1, wy, 0.0, x1, wy, height))
     faces = "0 1 2 3 4 5 0 1 4 0 4 3 1 2 5 1 5 4 2 0 3 2 3 5"
     ET.SubElement(asset, "mesh", {"name": mesh_name, "vertex": vertices, "face": faces})
 
@@ -169,26 +170,41 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         ET.SubElement(worldbody, "geom", attrs)
 
     elif element.kind == "stepping_stones":
-        count = max(1, int(p.get("count", 9)))
-        spacing = float(p.get("spacing", 0.85))
+        rows = max(1, int(p.get("rows", 1)))
+        cols = max(1, int(p.get("cols", p.get("count", 9))))
+        spacing_x = float(p.get("spacing_x", p.get("spacing", 0.85)))
+        spacing_y = float(p.get("spacing_y", p.get("spacing", 0.85)))
         side = float(p.get("size", p.get("radius", 0.34) * 2))
         height = float(p.get("height", 0.45))
-        for stone_index in range(count):
-            x = (stone_index - (count - 1) / 2) * spacing
-            _add_box(worldbody, f"{prefix}_{stone_index:02d}", element, x, 0.0, height / 2,
+        index = 0
+        for row in range(rows):
+            row_offset = spacing_x / 2 if row % 2 else 0.0
+            for col in range(cols):
+                x = (col - (cols - 1) / 2) * spacing_x + row_offset
+                y = (row - (rows - 1) / 2) * spacing_y
+                _add_box(worldbody, f"{prefix}_{index:02d}", element, x, y, height / 2,
                      (side / 2, side / 2, height / 2), rgba)
+                index += 1
 
     elif element.kind == "triangle":
         length = float(p.get("length", 2.5))
         width = float(p.get("width", 2.0))
         height = float(p.get("height", 0.8))
-        mesh_name = f"{prefix}_mesh"
-        _add_wedge_mesh(asset, mesh_name, length, width, height)
-        attrs = {"name": prefix, "type": "mesh", "mesh": mesh_name, "rgba": rgba, "friction": "0.8 0.1 0.1"}
-        attrs.update(_local_pose(element, 0.0, 0.0, 0.0))
-        if element.yaw:
-            attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
-        ET.SubElement(worldbody, "geom", attrs)
+        count = max(1, int(p.get("count", 4)))
+        gap = float(p.get("gap", 0.15))
+        spacing = float(p.get("spacing", length + gap))
+        for triangle_index in range(count):
+            reverse = triangle_index % 2 == 1
+            mesh_name = f"{prefix}_mesh_{int(reverse)}"
+            if not any(mesh.get("name") == mesh_name for mesh in asset.findall("mesh")):
+                _add_wedge_mesh(asset, mesh_name, length, width, height, reverse=reverse)
+            local_x = (triangle_index - (count - 1) / 2) * spacing
+            attrs = {"name": f"{prefix}_{triangle_index:02d}", "type": "mesh", "mesh": mesh_name,
+                     "rgba": rgba, "friction": "0.8 0.1 0.1"}
+            attrs.update(_local_pose(element, local_x, 0.0, 0.0))
+            if element.yaw:
+                attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
+            ET.SubElement(worldbody, "geom", attrs)
 
     elif element.kind == "tire_ring":
         count = max(1, int(p.get("count", 3)))

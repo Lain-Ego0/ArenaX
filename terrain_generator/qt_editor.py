@@ -12,7 +12,7 @@ from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QBrush, QPolygonF
 from PyQt5.QtWidgets import (
     QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
-    QMessageBox, QPushButton, QPlainTextEdit, QSplitter, QStatusBar, QVBoxLayout,
+    QMessageBox, QPushButton, QCheckBox, QSpinBox, QSplitter, QStatusBar, QVBoxLayout,
     QWidget,
 )
 
@@ -39,12 +39,25 @@ DEFAULT_PARAMS = {
     "stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8},
     "hollow_stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8, "thickness": 0.16},
     "ramp": {"length": 3.0, "width": 2.0, "height": 0.8, "thickness": 0.16},
-    "stepping_stones": {"count": 9, "spacing": 0.85, "size": 0.45, "height": 0.45},
-    "triangle": {"length": 2.5, "width": 2.0, "height": 0.8},
+    "stepping_stones": {"rows": 4, "cols": 6, "spacing_x": 0.85, "spacing_y": 0.85, "size": 0.45, "height": 0.45},
+    "triangle": {"count": 4, "length": 0.9, "width": 1.8, "height": 0.8, "gap": 0.28},
     "tire_ring": {"count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10, "upright": False},
     "slalom_poles": {"count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32},
     "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "border": 0.12},
     "high_wall": {"length": 2.4, "thickness": 0.22, "height": 1.2},
+}
+
+PARAM_SCHEMA = {
+    "platform": [("length", "长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "高度", "m", "float")],
+    "stairs": [("length", "总长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "总高度", "m", "float"), ("steps", "级数", "级", "int")],
+    "hollow_stairs": [("length", "总长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "总高度", "m", "float"), ("steps", "级数", "级", "int"), ("thickness", "踏板厚度", "m", "float")],
+    "ramp": [("length", "长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "高度", "m", "float")],
+    "stepping_stones": [("rows", "行数", "行", "int"), ("cols", "列数", "列", "int"), ("spacing_x", "横向间距", "m", "float"), ("spacing_y", "纵向间距", "m", "float"), ("size", "方柱边长", "m", "float"), ("height", "方柱高度", "m", "float")],
+    "triangle": [("count", "数量", "个", "int"), ("length", "单个长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "高度", "m", "float"), ("gap", "间隙", "m", "float")],
+    "tire_ring": [("count", "数量", "个", "int"), ("spacing", "间距", "m", "float"), ("major_radius", "轮胎主半径", "m", "float"), ("minor_radius", "轮胎厚度", "m", "float"), ("upright", "竖放", "", "bool")],
+    "slalom_poles": [("count", "杆数", "根", "int"), ("spacing", "杆间距", "m", "float"), ("radius", "杆半径", "m", "float"), ("height", "杆高", "m", "float"), ("zigzag", "交错距离", "m", "float")],
+    "sandpit": [("length", "长度", "m", "float"), ("width", "宽度", "m", "float"), ("depth", "深度", "m", "float"), ("border", "边框宽度", "m", "float")],
+    "high_wall": [("length", "墙长", "m", "float"), ("thickness", "墙厚", "m", "float"), ("height", "墙高", "m", "float")],
 }
 
 COLORS = {
@@ -73,6 +86,8 @@ class PreviewWidget(QWidget):
         self.setMinimumSize(700, 520)
         self.setMouseTracking(True)
         self.hover_world: tuple[float, float] | None = None
+        self.interaction_mode = "place"
+        self.element_action = None
 
     def set_scene(self, scene: ArenaScene) -> None:
         self.arena = scene
@@ -91,6 +106,30 @@ class PreviewWidget(QWidget):
         scale = min((self.width() - margin * 2) / config.length,
                     (self.height() - margin * 2) / config.width)
         return (x - self.width() / 2) / scale, (self.height() / 2 - y) / scale
+
+    def hit_test(self, x: float, y: float) -> int | None:
+        """Return the topmost approximate element under a world-space point."""
+
+        for index in range(len(self.arena.elements) - 1, -1, -1):
+            element = self.arena.elements[index]
+            dx, dy = rotate_xy(x - element.x, y - element.y, -element.yaw)
+            params = element.params
+            if element.kind in ("platform", "stairs", "hollow_stairs", "ramp", "sandpit", "high_wall"):
+                length = float(params.get("length", 2.4))
+                width = float(params.get("width", params.get("thickness", 1.0)))
+                if abs(dx) <= length / 2 + 0.25 and abs(dy) <= width / 2 + 0.25:
+                    return index
+            elif element.kind == "stepping_stones":
+                rows, cols = max(1, int(params.get("rows", 1))), max(1, int(params.get("cols", 9)))
+                spacing_x = float(params.get("spacing_x", params.get("spacing", .85)))
+                spacing_y = float(params.get("spacing_y", params.get("spacing", .85)))
+                if abs(dx) <= cols * spacing_x / 2 + .3 and abs(dy) <= rows * spacing_y / 2 + .3:
+                    return index
+            elif element.kind in ("triangle", "tire_ring", "slalom_poles"):
+                reach = max(float(params.get("length", 1.0)), float(params.get("spacing", .8)) * 2, 1.0)
+                if dx * dx + dy * dy <= reach * reach:
+                    return index
+        return None
 
     def polygon(self, element: TerrainElement, points: list[tuple[float, float]]) -> QPolygonF:
         return QPolygonF([self.world_to_view(element.x + rotate_xy(x, y, element.yaw)[0],
@@ -133,13 +172,18 @@ class PreviewWidget(QWidget):
             painter.drawLine(center, self.world_to_view(element.x + rotate_xy(float(p.get("length", 3)) / 2, 0, element.yaw)[0],
                                                                element.y + rotate_xy(float(p.get("length", 3)) / 2, 0, element.yaw)[1]))
         elif element.kind == "stepping_stones":
-            count, spacing = max(1, int(p.get("count", 9))), float(p.get("spacing", .85))
+            rows = max(1, int(p.get("rows", 1)))
+            cols = max(1, int(p.get("cols", p.get("count", 9))))
+            spacing_x = float(p.get("spacing_x", p.get("spacing", .85)))
+            spacing_y = float(p.get("spacing_y", p.get("spacing", .85)))
             side = float(p.get("size", float(p.get("radius", .34)) * 2))
-            for i in range(count):
-                x, y = (i - (count - 1) / 2) * spacing, 0.0
-                points = self.rect_points(element, side, side)
-                points = [(px + x, py + y) for px, py in points]
-                painter.drawPolygon(self.polygon(element, points))
+            for row in range(rows):
+                row_offset = spacing_x / 2 if row % 2 else 0.0
+                for col in range(cols):
+                    x = (col - (cols - 1) / 2) * spacing_x + row_offset
+                    y = (row - (rows - 1) / 2) * spacing_y
+                    points = [(px + x, py + y) for px, py in self.rect_points(element, side, side)]
+                    painter.drawPolygon(self.polygon(element, points))
         elif element.kind == "slalom_poles":
             count, spacing = max(1, int(p.get("count", 6))), float(p.get("spacing", .8))
             zigzag, radius = float(p.get("zigzag", .32)), float(p.get("radius", .07))
@@ -169,8 +213,13 @@ class PreviewWidget(QWidget):
                 painter.setPen(QPen(color, max(4, int(float(p.get("minor_radius", .10)) * 2 * r))))
                 painter.drawEllipse(center, r, r)
         elif element.kind == "triangle":
-            length, width = float(p.get("length", 2.5)), float(p.get("width", 2))
-            painter.drawPolygon(self.polygon(element, [(-length / 2, -width / 2), (length / 2, 0), (-length / 2, width / 2)]))
+            count = max(1, int(p.get("count", 4)))
+            length, width = float(p.get("length", .9)), float(p.get("width", 1.8))
+            spacing = float(p.get("spacing", length + float(p.get("gap", .28))))
+            for i in range(count):
+                x = (i - (count - 1) / 2) * spacing
+                points = [(-length / 2 + x, -width / 2), (length / 2 + x, 0), (-length / 2 + x, width / 2)]
+                painter.drawPolygon(self.polygon(element, points))
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
@@ -207,8 +256,9 @@ class PreviewWidget(QWidget):
         self.update()
 
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.LeftButton and self.element_added:
-            self.element_added(*self.view_to_world(event.x(), event.y()))
+        if event.button() == Qt.LeftButton and self.element_action:
+            x, y = self.view_to_world(event.x(), event.y())
+            self.element_action(x, y, bool(event.modifiers() & Qt.ControlModifier))
 
 
 class QtArenaEditor(QMainWindow):
@@ -242,10 +292,19 @@ class QtArenaEditor(QMainWindow):
         self.tool_combo = QComboBox()
         for kind in SUPPORTED_ELEMENT_TYPES:
             self.tool_combo.addItem(ELEMENT_LABELS[kind], kind)
+        self.tool_combo.currentIndexChanged.connect(self.tool_changed)
         left_layout.addWidget(QLabel("放置障碍类型"))
         left_layout.addWidget(self.tool_combo)
-        left_layout.addWidget(QLabel("点击中央场地即可放置"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("放置模式", "place")
+        self.mode_combo.addItem("选择模式", "select")
+        self.mode_combo.addItem("删除模式", "delete")
+        self.mode_combo.currentIndexChanged.connect(self.mode_changed)
+        left_layout.addWidget(QLabel("画布操作模式"))
+        left_layout.addWidget(self.mode_combo)
+        left_layout.addWidget(QLabel("放置后不会自动切换工具；可继续操作"))
         self.element_list = QListWidget()
+        self.element_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.element_list.currentRowChanged.connect(self.select_element)
         left_layout.addWidget(self.element_list, 1)
         self.preset_button = QPushButton("载入标准测试场地")
@@ -260,7 +319,7 @@ class QtArenaEditor(QMainWindow):
         splitter.addWidget(left)
 
         self.preview = PreviewWidget(self.scene)
-        self.preview.element_added = self.add_element_at
+        self.preview.element_action = self.handle_preview_click
         splitter.addWidget(self.preview)
 
         right = QWidget()
@@ -279,11 +338,30 @@ class QtArenaEditor(QMainWindow):
         form.addRow("Z (m)", self.z_spin)
         form.addRow("Yaw (deg)", self.yaw_spin)
         right_layout.addWidget(form_box)
-        right_layout.addWidget(QLabel("障碍参数 JSON（修改后立即预览）"))
-        self.params_edit = QPlainTextEdit()
-        self.params_edit.setMaximumHeight(150)
-        self.params_edit.textChanged.connect(self.update_selected)
-        right_layout.addWidget(self.params_edit)
+        self.params_box = QGroupBox("障碍参数（填写后实时预览）")
+        self.params_form = QFormLayout(self.params_box)
+        self.param_widgets: dict[str, QWidget] = {}
+        right_layout.addWidget(self.params_box)
+        action_row = QHBoxLayout()
+        self.delete_action = QPushButton("✕ 删除")
+        self.delete_action.setObjectName("deleteAction")
+        self.delete_action.clicked.connect(self.delete_selected)
+        self.confirm_action = QPushButton("✓ 确认 / 应用")
+        self.confirm_action.setObjectName("confirmAction")
+        self.confirm_action.clicked.connect(self.confirm_selected)
+        action_row.addWidget(self.delete_action)
+        action_row.addWidget(self.confirm_action)
+        right_layout.addLayout(action_row)
+        rotate_box = QGroupBox("快速旋转（吸附到 90°）")
+        rotate_layout = QHBoxLayout(rotate_box)
+        for text, angle in (("90°", 90), ("180°", 180), ("270°", 270)):
+            button = QPushButton(text)
+            button.clicked.connect(lambda _checked=False, value=angle: self.rotate_selected(value))
+            rotate_layout.addWidget(button)
+        self.snap_check = QCheckBox("Yaw 自动吸附")
+        self.snap_check.setChecked(True)
+        rotate_layout.addWidget(self.snap_check)
+        right_layout.addWidget(rotate_box)
         self.error_label = QLabel("")
         self.error_label.setObjectName("error")
         right_layout.addWidget(self.error_label)
@@ -305,6 +383,7 @@ class QtArenaEditor(QMainWindow):
         splitter.setSizes([250, 850, 330])
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("选择障碍类型后，在中央场地点击放置；修改参数会实时更新预览")
+        self.rebuild_param_form(self.current_kind(), DEFAULT_PARAMS[self.current_kind()])
 
     @staticmethod
     def make_spin(minimum: float = -100, maximum: float = 100, step: float = 0.1) -> QDoubleSpinBox:
@@ -325,11 +404,76 @@ class QtArenaEditor(QMainWindow):
             QPushButton { background: #2374c6; color: white; border: 0; border-radius: 5px; padding: 9px; font-weight: 600; }
             QPushButton:hover { background: #155d9f; }
             QPushButton:pressed { background: #0d477c; }
+            #deleteAction { background: #d94b55; }
+            #deleteAction:hover { background: #b62f3a; }
+            #confirmAction { background: #2f9d67; }
+            #confirmAction:hover { background: #22794e; }
             #error { color: #d64545; }
         """)
 
     def current_kind(self) -> str:
         return str(self.tool_combo.currentData())
+
+    def mode_changed(self, _index: int) -> None:
+        self.preview.interaction_mode = str(self.mode_combo.currentData())
+        labels = {"place": "放置模式：点击场地添加障碍", "select": "选择模式：点击选中，Ctrl 可多选", "delete": "删除模式：点击选中障碍，再点击红色删除"}
+        self.statusBar().showMessage(labels[self.preview.interaction_mode])
+
+    def handle_preview_click(self, x: float, y: float, ctrl: bool) -> None:
+        mode = str(self.mode_combo.currentData())
+        if mode == "place":
+            self.add_element_at(x, y)
+            return
+        index = self.preview.hit_test(x, y)
+        if index is None:
+            return
+        if ctrl:
+            item = self.element_list.item(index)
+            item.setSelected(not item.isSelected())
+        else:
+            self.element_list.clearSelection()
+            self.element_list.setCurrentRow(index)
+            self.element_list.item(index).setSelected(True)
+
+    def tool_changed(self, _index: int) -> None:
+        self.rebuild_param_form(self.current_kind(), DEFAULT_PARAMS[self.current_kind()])
+
+    def rebuild_param_form(self, kind: str, values: dict) -> None:
+        while self.params_form.rowCount():
+            self.params_form.removeRow(0)
+        self.param_widgets.clear()
+        for key, label, unit, value_type in PARAM_SCHEMA[kind]:
+            if value_type == "int":
+                widget = QSpinBox()
+                widget.setRange(1, 1000)
+                widget.setValue(int(values.get(key, DEFAULT_PARAMS[kind].get(key, 1))))
+                widget.valueChanged.connect(self.update_selected)
+            elif value_type == "bool":
+                widget = QCheckBox("是")
+                widget.setChecked(bool(values.get(key, DEFAULT_PARAMS[kind].get(key, False))))
+                widget.stateChanged.connect(self.update_selected)
+            else:
+                widget = self.make_spin(0.001, 100.0, 0.05)
+                widget.setValue(float(values.get(key, DEFAULT_PARAMS[kind].get(key, 0.1))))
+                widget.valueChanged.connect(self.update_selected)
+            self.param_widgets[key] = widget
+            self.params_form.addRow(f"{label}{f' ({unit})' if unit else ''}", widget)
+
+    def read_params(self) -> dict:
+        values = {}
+        kind = self.current_kind()
+        for key, _label, _unit, value_type in PARAM_SCHEMA[kind]:
+            widget = self.param_widgets[key]
+            if value_type == "int":
+                values[key] = int(widget.value())
+            elif value_type == "bool":
+                values[key] = bool(widget.isChecked())
+            else:
+                values[key] = float(widget.value())
+        return values
+
+    def write_params(self, kind: str, values: dict) -> None:
+        self.rebuild_param_form(kind, values)
 
     def add_element_at(self, x: float, y: float) -> None:
         kind = self.current_kind()
@@ -338,6 +482,9 @@ class QtArenaEditor(QMainWindow):
         self.scene.elements.append(element)
         self.selected_index = index
         self.refresh(select=index)
+
+    def selected_indices(self) -> list[int]:
+        return sorted({self.element_list.row(item) for item in self.element_list.selectedItems()})
 
     def select_element(self, index: int) -> None:
         self.selected_index = index if index >= 0 else None
@@ -350,25 +497,45 @@ class QtArenaEditor(QMainWindow):
             self.z_spin.setValue(element.z); self.yaw_spin.setValue(element.yaw)
             self.x_spin.blockSignals(False); self.y_spin.blockSignals(False)
             self.z_spin.blockSignals(False); self.yaw_spin.blockSignals(False)
-            self.params_edit.blockSignals(True)
-            self.params_edit.setPlainText(json.dumps(element.params, indent=2, ensure_ascii=False))
-            self.params_edit.blockSignals(False)
+            self.tool_combo.blockSignals(True)
+            self.tool_combo.setCurrentIndex(self.tool_combo.findData(element.kind))
+            self.tool_combo.blockSignals(False)
+            self.write_params(element.kind, element.params)
         self.preview.update()
 
     def update_selected(self) -> None:
         if self.selected_index is None or self.selected_index >= len(self.scene.elements):
             return
+        # Position/dimension editing is intentionally single-selection. Batch
+        # selection remains available for delete and quick rotation below.
+        if len(self.selected_indices()) > 1:
+            return
         element = self.scene.elements[self.selected_index]
-        element.x, element.y, element.z, element.yaw = (self.x_spin.value(), self.y_spin.value(), self.z_spin.value(), self.yaw_spin.value())
-        try:
-            params = json.loads(self.params_edit.toPlainText() or "{}")
-            if not isinstance(params, dict):
-                raise ValueError("参数必须是 JSON 对象")
-            element.params = params
-            self.error_label.setText("")
-        except (json.JSONDecodeError, ValueError) as exc:
-            self.error_label.setText(f"参数错误：{exc}")
+        element.x, element.y, element.z = (self.x_spin.value(), self.y_spin.value(), self.z_spin.value())
+        yaw = self.yaw_spin.value()
+        if self.snap_check.isChecked():
+            yaw = round(yaw / 90.0) * 90.0
+            self.yaw_spin.blockSignals(True)
+            self.yaw_spin.setValue(yaw)
+            self.yaw_spin.blockSignals(False)
+        element.yaw = yaw
+        element.params = self.read_params()
+        self.error_label.setText("")
         self.preview.update()
+
+    def confirm_selected(self) -> None:
+        self.update_selected()
+        self.statusBar().showMessage("已确认当前障碍参数")
+
+    def rotate_selected(self, angle: float) -> None:
+        indices = self.selected_indices()
+        if not indices and self.selected_index is not None:
+            indices = [self.selected_index]
+        for index in indices:
+            element = self.scene.elements[index]
+            element.yaw = (round((element.yaw + angle) / 90.0) * 90.0) % 360.0
+        self.refresh(select=self.selected_index)
+        self.statusBar().showMessage(f"已将 {len(indices)} 个障碍旋转并吸附到 90°")
 
     def refresh(self, select: int | None = None) -> None:
         self.preview.set_scene(self.scene)
@@ -386,10 +553,13 @@ class QtArenaEditor(QMainWindow):
             self.preview.update()
 
     def delete_selected(self) -> None:
-        if self.selected_index is not None:
-            self.scene.elements.pop(self.selected_index)
-            self.selected_index = None
-            self.refresh()
+        indices = self.selected_indices()
+        if not indices and self.selected_index is not None:
+            indices = [self.selected_index]
+        for index in reversed(indices):
+            self.scene.elements.pop(index)
+        self.selected_index = None
+        self.refresh()
 
     def clear(self) -> None:
         self.scene.elements.clear()

@@ -45,7 +45,7 @@ def test_playground_scene_round_trip_and_compile(tmp_path):
     assert len(loaded.elements) == 10
     model = load_and_validate(paths["xml"])
     assert model.nhfield == 1
-    assert model.ngeom == 45
+    assert model.ngeom == 63
 
 
 def test_export_can_extend_a_base_mujoco_scene(tmp_path):

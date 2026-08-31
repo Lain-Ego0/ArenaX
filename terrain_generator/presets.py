@@ -24,10 +24,12 @@ def playground_scene(seed: int = 7) -> ArenaScene:
             "length": 3.2, "width": 2.4, "height": 0.8, "thickness": 0.16,
         }),
         TerrainElement("stepping_stones", x=-5.8, y=-2.8, name="stepping_stones", params={
-            "count": 9, "spacing": 0.85, "size": 0.45, "height": 0.45,
+            "rows": 4, "cols": 6, "spacing_x": 0.85, "spacing_y": 0.85,
+            "size": 0.45, "height": 0.45,
         }),
         TerrainElement("triangle", x=-0.8, y=-2.8, name="triangle_obstacle", params={
-            "length": 2.8, "width": 2.0, "height": 0.85,
+            "count": 4, "length": 0.9, "width": 1.8, "height": 0.85,
+            "gap": 0.28,
         }),
         TerrainElement("tire_ring", x=4.4, y=-2.8, name="tire_rings", params={
             "count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10,
