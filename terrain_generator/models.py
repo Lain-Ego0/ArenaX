@@ -15,6 +15,9 @@ SUPPORTED_ELEMENT_TYPES = (
     "stepping_stones",
     "triangle",
     "tire_ring",
+    "slalom_poles",
+    "sandpit",
+    "high_wall",
 )
 
 

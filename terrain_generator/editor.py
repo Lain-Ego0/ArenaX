@@ -20,6 +20,9 @@ ELEMENT_LABELS = {
     "stepping_stones": "梅花桩",
     "triangle": "三角障碍",
     "tire_ring": "轮胎圈",
+    "slalom_poles": "绕杆",
+    "sandpit": "沙坑",
+    "high_wall": "高墙",
 }
 
 DEFAULT_PARAMS = {
@@ -27,9 +30,12 @@ DEFAULT_PARAMS = {
     "stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8},
     "hollow_stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8, "thickness": 0.16},
     "ramp": {"length": 3.0, "width": 2.0, "height": 0.8, "thickness": 0.16},
-    "stepping_stones": {"count": 9, "spacing": 0.85, "radius": 0.34, "height": 0.45},
+    "stepping_stones": {"count": 9, "spacing": 0.85, "size": 0.45, "height": 0.45},
     "triangle": {"length": 2.5, "width": 2.0, "height": 0.8},
-    "tire_ring": {"count": 3, "spacing": 1.1, "major_radius": 0.52, "minor_radius": 0.14, "upright": True},
+    "tire_ring": {"count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10, "upright": False},
+    "slalom_poles": {"count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32},
+    "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "border": 0.12},
+    "high_wall": {"length": 2.4, "thickness": 0.22, "height": 1.2},
 }
 
 

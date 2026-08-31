@@ -65,6 +65,29 @@ def _ensure_child(parent: ET.Element, tag: str) -> ET.Element:
     return child if child is not None else ET.SubElement(parent, tag)
 
 
+def _ensure_root_child(root: ET.Element, tag: str, before: str = "asset") -> ET.Element:
+    child = root.find(tag)
+    if child is not None:
+        return child
+    child = ET.Element(tag)
+    children = list(root)
+    insert_at = next((index for index, item in enumerate(children) if item.tag == before), len(children))
+    root.insert(insert_at, child)
+    return child
+
+
+def _configure_classic_visuals(root: ET.Element) -> None:
+    """Apply the classic MuJoCo blue checkerboard and gradient sky."""
+
+    visual = _ensure_root_child(root, "visual")
+    headlight = _ensure_child(visual, "headlight")
+    headlight.attrib.update({"diffuse": "0.6 0.6 0.6", "ambient": "0.3 0.3 0.3", "specular": "0 0 0"})
+    haze = _ensure_child(visual, "rgba")
+    haze.attrib.update({"haze": "0.15 0.25 0.35 1"})
+    global_view = _ensure_child(visual, "global")
+    global_view.attrib.update({"azimuth": "-130", "elevation": "-20"})
+
+
 def _fmt(values: tuple[float, ...]) -> str:
     return " ".join(f"{value:.6g}" for value in values)
 
@@ -90,6 +113,17 @@ def _add_box(worldbody: ET.Element, name: str, element: TerrainElement,
     ET.SubElement(worldbody, "geom", attrs)
 
 
+def _add_wedge_mesh(asset: ET.Element, mesh_name: str, length: float,
+                    width: float, height: float) -> None:
+    """Create a closed triangular-prism wedge with its bottom on z=0."""
+
+    lx, wy = length / 2, width / 2
+    vertices = _fmt((-lx, -wy, 0.0, lx, -wy, 0.0, lx, -wy, height,
+                     -lx, wy, 0.0, lx, wy, 0.0, lx, wy, height))
+    faces = "0 1 2 3 4 5 0 1 4 0 4 3 1 2 5 1 5 4 2 0 3 2 3 5"
+    ET.SubElement(asset, "mesh", {"name": mesh_name, "vertex": vertices, "face": faces})
+
+
 def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainElement, index: int) -> None:
     p = element.params
     prefix = element.name or f"{element.kind}_{index:03d}"
@@ -97,7 +131,8 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         "platform": "0.16 0.40 0.72 1", "stairs": "0.72 0.42 0.14 1",
         "hollow_stairs": "0.82 0.56 0.12 1", "ramp": "0.18 0.52 0.28 1",
         "stepping_stones": "0.35 0.35 0.38 1", "triangle": "0.70 0.18 0.10 1",
-        "tire_ring": "0.04 0.04 0.04 1",
+        "tire_ring": "0.04 0.04 0.04 1", "slalom_poles": "0.84 0.18 0.12 1",
+        "sandpit": "0.78 0.60 0.32 1", "high_wall": "0.18 0.30 0.58 1",
     }[element.kind]
 
     if element.kind == "platform":
@@ -124,38 +159,31 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         length = float(p.get("length", 3.0))
         width = float(p.get("width", 2.0))
         height = float(p.get("height", 0.8))
-        thickness = max(float(p.get("thickness", 0.16)), 1e-3)
-        angle = -float(np.degrees(np.arctan2(height, length)))
-        attrs = {"euler": _fmt((0.0, angle, element.yaw))}
-        _add_box(worldbody, prefix, element, 0.0, 0.0, height / 2 + thickness / 2,
-                 (length / 2, width / 2, thickness / 2), rgba, attrs)
+        mesh_name = f"{prefix}_mesh"
+        _add_wedge_mesh(asset, mesh_name, length, width, height)
+        attrs = {"name": prefix, "type": "mesh", "mesh": mesh_name,
+                 "rgba": rgba, "friction": "0.8 0.1 0.1"}
+        attrs.update(_local_pose(element, 0.0, 0.0, 0.0))
+        if element.yaw:
+            attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
+        ET.SubElement(worldbody, "geom", attrs)
 
     elif element.kind == "stepping_stones":
         count = max(1, int(p.get("count", 9)))
         spacing = float(p.get("spacing", 0.85))
-        radius = float(p.get("radius", 0.34))
+        side = float(p.get("size", p.get("radius", 0.34) * 2))
         height = float(p.get("height", 0.45))
-        # A central post plus a ring gives the characteristic plum-blossom layout.
-        points = [(0.0, 0.0)]
-        for point_index in range(count - 1):
-            angle = 2 * np.pi * point_index / max(count - 1, 1)
-            points.append((spacing * np.cos(angle), spacing * np.sin(angle)))
-        for stone_index, (x, y) in enumerate(points[:count]):
-            attrs = {"name": f"{prefix}_{stone_index:02d}", "type": "cylinder",
-                     "size": _fmt((radius, height / 2)), "rgba": rgba, "friction": "0.8 0.1 0.1"}
-            attrs.update(_local_pose(element, x, y, height / 2))
-            ET.SubElement(worldbody, "geom", attrs)
+        for stone_index in range(count):
+            x = (stone_index - (count - 1) / 2) * spacing
+            _add_box(worldbody, f"{prefix}_{stone_index:02d}", element, x, 0.0, height / 2,
+                     (side / 2, side / 2, height / 2), rgba)
 
     elif element.kind == "triangle":
         length = float(p.get("length", 2.5))
         width = float(p.get("width", 2.0))
         height = float(p.get("height", 0.8))
         mesh_name = f"{prefix}_mesh"
-        lx, wy = length / 2, width / 2
-        vertices = _fmt((-lx, -wy, 0.0, lx, -wy, 0.0, lx, -wy, height,
-                         -lx, wy, 0.0, lx, wy, 0.0, lx, wy, height))
-        faces = "0 1 2 3 4 5 0 1 4 0 4 3 1 2 5 1 5 4 2 0 3 2 3 5"
-        ET.SubElement(asset, "mesh", {"name": mesh_name, "vertex": vertices, "face": faces})
+        _add_wedge_mesh(asset, mesh_name, length, width, height)
         attrs = {"name": prefix, "type": "mesh", "mesh": mesh_name, "rgba": rgba, "friction": "0.8 0.1 0.1"}
         attrs.update(_local_pose(element, 0.0, 0.0, 0.0))
         if element.yaw:
@@ -165,9 +193,9 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
     elif element.kind == "tire_ring":
         count = max(1, int(p.get("count", 3)))
         spacing = float(p.get("spacing", 1.1))
-        major = float(p.get("major_radius", 0.52))
-        minor = float(p.get("minor_radius", 0.14))
-        upright = bool(p.get("upright", True))
+        major = float(p.get("major_radius", 0.27))
+        minor = float(p.get("minor_radius", 0.10))
+        upright = bool(p.get("upright", False))
         center_offset = (count - 1) * spacing / 2
         mesh_name = f"{prefix}_mesh"
         major_segments, minor_segments = 24, 10
@@ -209,6 +237,48 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
                 attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
             ET.SubElement(worldbody, "geom", attrs)
 
+    elif element.kind == "slalom_poles":
+        count = max(1, int(p.get("count", 6)))
+        spacing = float(p.get("spacing", 0.8))
+        radius = float(p.get("radius", 0.07))
+        height = float(p.get("height", 1.2))
+        zigzag = float(p.get("zigzag", 0.32))
+        for pole_index in range(count):
+            x = (pole_index - (count - 1) / 2) * spacing
+            y = zigzag if pole_index % 2 else -zigzag
+            attrs = {"name": f"{prefix}_{pole_index:02d}", "type": "cylinder",
+                     "size": _fmt((radius, height / 2)), "rgba": rgba,
+                     "friction": "0.6 0.1 0.1"}
+            attrs.update(_local_pose(element, x, y, height / 2))
+            ET.SubElement(worldbody, "geom", attrs)
+
+    elif element.kind == "sandpit":
+        length = float(p.get("length", 2.4))
+        width = float(p.get("width", 2.0))
+        depth = max(float(p.get("depth", 0.06)), 1e-3)
+        border = max(float(p.get("border", 0.12)), 0.02)
+        sand_rgba = "0.78 0.60 0.32 1"
+        # The center is a low-friction sand surface; raised borders make the pit
+        # visible and keep the component useful when placed over a flat hfield.
+        _add_box(worldbody, f"{prefix}_sand", element, 0.0, 0.0, -depth / 2,
+                 (length / 2, width / 2, depth / 2), sand_rgba,
+                 {"friction": "1.2 0.35 0.02"})
+        _add_box(worldbody, f"{prefix}_left", element, -length / 2, 0.0, border / 2,
+                 (border / 2, width / 2 + border, border / 2), sand_rgba)
+        _add_box(worldbody, f"{prefix}_right", element, length / 2, 0.0, border / 2,
+                 (border / 2, width / 2 + border, border / 2), sand_rgba)
+        _add_box(worldbody, f"{prefix}_front", element, 0.0, -width / 2, border / 2,
+                 (length / 2, border / 2, border / 2), sand_rgba)
+        _add_box(worldbody, f"{prefix}_back", element, 0.0, width / 2, border / 2,
+                 (length / 2, border / 2, border / 2), sand_rgba)
+
+    elif element.kind == "high_wall":
+        length = float(p.get("length", 2.4))
+        thickness = float(p.get("thickness", 0.22))
+        height = float(p.get("height", 1.2))
+        _add_box(worldbody, prefix, element, 0.0, 0.0, height / 2,
+                 (length / 2, thickness / 2, height / 2), rgba)
+
 
 def build_xml(terrain: TerrainMap, heightfield_filename: str = "terrain.png",
               elements: list[TerrainElement] | None = None, model_name: str | None = None,
@@ -221,19 +291,34 @@ def build_xml(terrain: TerrainMap, heightfield_filename: str = "terrain.png",
     root = (_load_base_scene(base_scene_path, scene_name) if base_scene_path
             else ET.Element("mujoco", {"model": scene_name}))
     if root.find("compiler") is None:
-        ET.SubElement(root, "compiler", {"angle": "degree", "coordinate": "local"})
+        compiler = _ensure_root_child(root, "compiler", before="option")
+        compiler.attrib.update({"angle": "degree", "coordinate": "local"})
     if root.find("option") is None:
-        ET.SubElement(root, "option", {"gravity": "0 0 -9.81", "integrator": "RK4"})
+        option = _ensure_root_child(root, "option", before="visual")
+        option.attrib.update({"gravity": "0 0 -9.81", "integrator": "RK4"})
+    _configure_classic_visuals(root)
 
     asset = _ensure_child(root, "asset")
-    texture_name = _unique_name(asset, "texture", "terrain_texture")
+    skybox = next((item for item in asset.findall("texture") if item.get("type") == "skybox"), None)
+    if skybox is None:
+        skybox = ET.SubElement(asset, "texture")
+    skybox_name = skybox.get("name", "skybox")
+    skybox.attrib.update({
+        "name": skybox_name, "type": "skybox", "builtin": "gradient",
+        "rgb1": "0.30 0.50 0.72", "rgb2": "0.015 0.035 0.09", "width": "512", "height": "3072",
+    })
+    texture_name = _unique_name(asset, "texture", "terrain_checker")
     material_name = _unique_name(asset, "material", "terrain_material")
     hfield_name = _unique_name(asset, "hfield", "terrain")
     ET.SubElement(asset, "texture", {
-        "name": texture_name, "type": "2d", "builtin": "gradient",
-        "rgb1": "0.22 0.34 0.16", "rgb2": "0.55 0.40 0.18", "width": "256", "height": "256",
+        "name": texture_name, "type": "2d", "builtin": "checker", "mark": "edge",
+        "rgb1": "0.08 0.20 0.38", "rgb2": "0.24 0.50 0.78",
+        "markrgb": "0.86 0.93 1.0", "width": "300", "height": "300",
     })
-    ET.SubElement(asset, "material", {"name": material_name, "texture": texture_name, "texrepeat": "4 4"})
+    ET.SubElement(asset, "material", {
+        "name": material_name, "texture": texture_name, "texuniform": "true",
+        "texrepeat": "5 5", "reflectance": "0.15",
+    })
     ET.SubElement(asset, "hfield", {
         "name": hfield_name, "file": heightfield_filename,
         # MuJoCo requires all hfield size entries to be strictly positive;

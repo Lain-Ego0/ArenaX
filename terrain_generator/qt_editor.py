@@ -29,6 +29,9 @@ ELEMENT_LABELS = {
     "stepping_stones": "梅花桩",
     "triangle": "三角障碍",
     "tire_ring": "轮胎圈",
+    "slalom_poles": "绕杆",
+    "sandpit": "沙坑",
+    "high_wall": "高墙",
 }
 
 DEFAULT_PARAMS = {
@@ -36,15 +39,18 @@ DEFAULT_PARAMS = {
     "stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8},
     "hollow_stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8, "thickness": 0.16},
     "ramp": {"length": 3.0, "width": 2.0, "height": 0.8, "thickness": 0.16},
-    "stepping_stones": {"count": 9, "spacing": 0.85, "radius": 0.34, "height": 0.45},
+    "stepping_stones": {"count": 9, "spacing": 0.85, "size": 0.45, "height": 0.45},
     "triangle": {"length": 2.5, "width": 2.0, "height": 0.8},
-    "tire_ring": {"count": 3, "spacing": 1.1, "major_radius": 0.52, "minor_radius": 0.14, "upright": True},
+    "tire_ring": {"count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10, "upright": False},
+    "slalom_poles": {"count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32},
+    "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "border": 0.12},
+    "high_wall": {"length": 2.4, "thickness": 0.22, "height": 1.2},
 }
 
 COLORS = {
     "platform": "#2374c6", "stairs": "#3d8ed0", "hollow_stairs": "#5b9fda",
     "ramp": "#2a9d8f", "stepping_stones": "#6b7c93", "triangle": "#e76f51",
-    "tire_ring": "#263238",
+    "tire_ring": "#263238", "slalom_poles": "#d1493f", "sandpit": "#c89b5a", "high_wall": "#315f9c",
 }
 
 
@@ -127,26 +133,44 @@ class PreviewWidget(QWidget):
             painter.drawLine(center, self.world_to_view(element.x + rotate_xy(float(p.get("length", 3)) / 2, 0, element.yaw)[0],
                                                                element.y + rotate_xy(float(p.get("length", 3)) / 2, 0, element.yaw)[1]))
         elif element.kind == "stepping_stones":
-            count, spacing, radius = max(1, int(p.get("count", 9))), float(p.get("spacing", .85)), float(p.get("radius", .34))
-            points = [(0.0, 0.0)] + [(spacing * math.cos(2 * math.pi * i / max(count - 1, 1)),
-                                     spacing * math.sin(2 * math.pi * i / max(count - 1, 1))) for i in range(count - 1)]
-            for x, y in points[:count]:
+            count, spacing = max(1, int(p.get("count", 9))), float(p.get("spacing", .85))
+            side = float(p.get("size", float(p.get("radius", .34)) * 2))
+            for i in range(count):
+                x, y = (i - (count - 1) / 2) * spacing, 0.0
+                points = self.rect_points(element, side, side)
+                points = [(px + x, py + y) for px, py in points]
+                painter.drawPolygon(self.polygon(element, points))
+        elif element.kind == "slalom_poles":
+            count, spacing = max(1, int(p.get("count", 6))), float(p.get("spacing", .8))
+            zigzag, radius = float(p.get("zigzag", .32)), float(p.get("radius", .07))
+            for i in range(count):
+                x, y = (i - (count - 1) / 2) * spacing, zigzag if i % 2 else -zigzag
                 center = self.world_to_view(element.x + rotate_xy(x, y, element.yaw)[0], element.y + rotate_xy(x, y, element.yaw)[1])
                 r = max(4, radius * min(self.width() / self.arena.terrain.length, self.height() / self.arena.terrain.width))
                 painter.drawEllipse(center, r, r)
-        elif element.kind == "triangle":
-            length, width = float(p.get("length", 2.5)), float(p.get("width", 2))
-            painter.drawPolygon(self.polygon(element, [(-length / 2, -width / 2), (length / 2, 0), (-length / 2, width / 2)]))
+        elif element.kind == "sandpit":
+            length, width = float(p.get("length", 2.4)), float(p.get("width", 2.0))
+            painter.setBrush(QBrush(QColor("#d5b276")))
+            painter.drawPolygon(self.polygon(element, self.rect_points(element, length, width)))
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(QColor("#9a743e"), 3))
+            painter.drawPolygon(self.polygon(element, self.rect_points(element, length, width)))
+        elif element.kind == "high_wall":
+            length, thickness = float(p.get("length", 2.4)), float(p.get("thickness", .22))
+            painter.drawPolygon(self.polygon(element, self.rect_points(element, length, thickness)))
         elif element.kind == "tire_ring":
-            count, spacing, major = max(1, int(p.get("count", 3))), float(p.get("spacing", 1.1)), float(p.get("major_radius", .52))
+            count, spacing, major = max(1, int(p.get("count", 3))), float(p.get("spacing", .85)), float(p.get("major_radius", .27))
             for i in range(count):
                 x = (i - (count - 1) / 2) * spacing
                 wx, wy = rotate_xy(x, 0, element.yaw)
                 center = self.world_to_view(element.x + wx, element.y + wy)
                 r = major * min(self.width() / self.arena.terrain.length, self.height() / self.arena.terrain.width)
                 painter.setBrush(Qt.NoBrush)
-                painter.setPen(QPen(color, max(5, int(float(p.get("minor_radius", .14)) * 2 * r))))
+                painter.setPen(QPen(color, max(4, int(float(p.get("minor_radius", .10)) * 2 * r))))
                 painter.drawEllipse(center, r, r)
+        elif element.kind == "triangle":
+            length, width = float(p.get("length", 2.5)), float(p.get("width", 2))
+            painter.drawPolygon(self.polygon(element, [(-length / 2, -width / 2), (length / 2, 0), (-length / 2, width / 2)]))
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)

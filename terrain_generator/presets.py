@@ -24,15 +24,23 @@ def playground_scene(seed: int = 7) -> ArenaScene:
             "length": 3.2, "width": 2.4, "height": 0.8, "thickness": 0.16,
         }),
         TerrainElement("stepping_stones", x=-5.8, y=-2.8, name="stepping_stones", params={
-            "count": 9, "spacing": 0.85, "radius": 0.34, "height": 0.45,
+            "count": 9, "spacing": 0.85, "size": 0.45, "height": 0.45,
         }),
         TerrainElement("triangle", x=-0.8, y=-2.8, name="triangle_obstacle", params={
             "length": 2.8, "width": 2.0, "height": 0.85,
         }),
         TerrainElement("tire_ring", x=4.4, y=-2.8, name="tire_rings", params={
-            "count": 3, "spacing": 1.1, "major_radius": 0.52, "minor_radius": 0.14,
-            "upright": True,
+            "count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10,
+            "upright": False,
+        }),
+        TerrainElement("slalom_poles", x=7.2, y=2.8, name="slalom_poles", params={
+            "count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32,
+        }),
+        TerrainElement("sandpit", x=7.0, y=-2.8, name="sandpit", params={
+            "length": 2.4, "width": 2.0, "depth": 0.06,
+        }),
+        TerrainElement("high_wall", x=8.8, y=0.0, name="high_wall", params={
+            "length": 2.4, "thickness": 0.22, "height": 1.2,
         }),
     ]
     return ArenaScene(name="playground", terrain=terrain, elements=elements)
-

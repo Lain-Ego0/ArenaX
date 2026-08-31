@@ -32,6 +32,9 @@ def test_export_and_mujoco_compile(tmp_path):
     assert model.ngeom == 4  # heightfield + 2 obstacles + test ball
     metadata = json.loads(paths["metadata"].read_text(encoding="utf-8"))
     assert metadata["config"]["kind"] == "obstacle_mix"
+    xml = paths["xml"].read_text(encoding="utf-8")
+    assert 'type="skybox"' in xml
+    assert 'builtin="checker"' in xml
 
 
 def test_playground_scene_round_trip_and_compile(tmp_path):
@@ -39,10 +42,10 @@ def test_playground_scene_round_trip_and_compile(tmp_path):
     paths = export_scene(scene, tmp_path / "playground")
     loaded = load_scene(paths["scene"])
     assert isinstance(loaded, ArenaScene)
-    assert len(loaded.elements) == 7
+    assert len(loaded.elements) == 10
     model = load_and_validate(paths["xml"])
     assert model.nhfield == 1
-    assert model.ngeom == 33
+    assert model.ngeom == 45
 
 
 def test_export_can_extend_a_base_mujoco_scene(tmp_path):
@@ -66,3 +69,18 @@ def test_export_can_extend_a_base_mujoco_scene(tmp_path):
     model = load_and_validate(paths["xml"])
     assert model.nbody >= 2
     assert str(robot_fragment.resolve()) in paths["xml"].read_text(encoding="utf-8")
+
+
+def test_base_skybox_is_reused_and_restyled(tmp_path):
+    base_scene = tmp_path / "base.xml"
+    base_scene.write_text(
+        '<mujoco model="base"><asset><texture name="skybox" type="skybox" '
+        'builtin="gradient" rgb1="1 1 1" rgb2="0 0 0" width="32" height="32"/>'
+        '</asset><worldbody/></mujoco>', encoding="utf-8",
+    )
+    scene = playground_scene(seed=5)
+    scene.base_scene = str(base_scene)
+    paths = export_scene(scene, tmp_path / "restyled")
+    xml = paths["xml"].read_text(encoding="utf-8")
+    assert xml.count('type="skybox"') == 1
+    assert 'rgb1="0.30 0.50 0.72"' in xml
