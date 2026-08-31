@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mujoco-terrain-generator"
+version = "0.1.0"
+description = "Procedural terrain generator and MuJoCo XML exporter"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.23", "mujoco>=3.0"]
+
+[project.scripts]
+mujoco-terrain = "terrain_generator.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["terrain_generator*"]
