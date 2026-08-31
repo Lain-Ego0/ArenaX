@@ -182,6 +182,15 @@ def _add_wedge_mesh(asset: ET.Element, mesh_name: str, length: float,
     ET.SubElement(asset, "mesh", {"name": mesh_name, "vertex": vertices, "face": faces})
 
 
+def _triangle_dimensions(params: dict) -> tuple[float, float, float]:
+    length = float(params.get("length", 2.5))
+    width = float(params.get("width", 2.0))
+    height = float(params.get("height", 0.8))
+    if "angle" in params:
+        height = length * np.tan(np.deg2rad(np.clip(float(params["angle"]), 1.0, 80.0)))
+    return length, width, height
+
+
 def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainElement, index: int) -> None:
     p = element.params
     prefix = element.name or f"{element.kind}_{index:03d}"
@@ -247,27 +256,29 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
                 index += 1
 
     elif element.kind == "triangle":
-        length = float(p.get("length", 2.5))
-        width = float(p.get("width", 2.0))
-        height = float(p.get("height", 0.8))
+        length, width, height = _triangle_dimensions(p)
         count = max(1, int(p.get("count", 4)))
         gap = float(p.get("gap", 0.15))
         stagger = float(p.get("stagger", 0.35))
-        spacing = float(p.get("spacing", length + gap))
+        pair_yaw = float(p.get("pair_yaw", 90.0))
+        group_spacing = float(p.get("group_spacing", width + gap))
+        pair_spacing = float(p.get("pair_spacing", length + gap))
         for triangle_index in range(count):
-            # Face the sloped sides toward adjacent obstacles; this keeps the
-            # vertical backs on the outside of the alternating row.
-            reverse = triangle_index % 2 == 0
+            pair_slot = triangle_index % 2
+            group_index = triangle_index // 2
+            reverse = pair_slot == 0
             mesh_name = f"{prefix}_mesh_{int(reverse)}"
             if not any(mesh.get("name") == mesh_name for mesh in asset.findall("mesh")):
                 _add_wedge_mesh(asset, mesh_name, length, width, height, reverse=reverse)
-            local_x = (triangle_index - (count - 1) / 2) * spacing
-            local_y = stagger if triangle_index % 2 == 0 else -stagger
+            groups = (count + 1) // 2
+            group_x = (group_index - (groups - 1) / 2) * group_spacing
+            local_x = group_x + (-stagger / 2 if pair_slot == 0 else stagger / 2)
+            local_y = -pair_spacing / 2 if pair_slot == 0 else pair_spacing / 2
             attrs = {"name": f"{prefix}_{triangle_index:02d}", "type": "mesh", "mesh": mesh_name,
                      "rgba": rgba, "friction": "0.8 0.1 0.1"}
             attrs.update(_local_pose(element, local_x, local_y, 0.0))
-            if element.yaw:
-                attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
+            local_yaw = element.yaw + pair_yaw
+            attrs["euler"] = _fmt((0.0, 0.0, local_yaw))
             ET.SubElement(worldbody, "geom", attrs)
 
     elif element.kind == "tire_ring":

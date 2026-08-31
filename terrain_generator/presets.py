@@ -30,7 +30,8 @@ def playground_scene(seed: int = 7) -> ArenaScene:
         }),
         TerrainElement("triangle", x=-0.8, y=-2.8, name="triangle_obstacle", params={
             "count": 4, "length": 0.9, "width": 1.8, "height": 0.85,
-            "gap": 0.28, "stagger": 0.35,
+            "angle": 30.0, "gap": 0.28, "stagger": 0.35,
+            "pair_yaw": 90.0, "group_spacing": 2.1, "pair_spacing": 1.18,
         }),
         TerrainElement("tire_ring", x=4.4, y=-2.8, name="tire_rings", params={
             "count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10,
