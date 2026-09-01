@@ -52,7 +52,15 @@ class OnnxPolicy:
             # The Qt editor can be launched by an IDE using system Python.
             # Reuse the repository environment's packages in that case so
             # the embedded page remains in the same PyQt application.
-            project_root = Path(__file__).resolve().parent.parent
+            # ``m20.py`` lives in terrain_generator/simulation/, so walking
+            # exactly two parents (the old location) no longer reaches the
+            # repository root.  Locate the first ancestor that owns .venv so
+            # IDE-launched system Python can reuse the project environment.
+            module_path = Path(__file__).resolve()
+            project_root = next(
+                (parent for parent in module_path.parents if (parent / ".venv").is_dir()),
+                module_path.parents[2],
+            )
             site_package_dirs = sorted(project_root.glob(".venv/lib/python*/site-packages"))
             for site_packages in reversed(site_package_dirs):
                 site_packages_text = str(site_packages)

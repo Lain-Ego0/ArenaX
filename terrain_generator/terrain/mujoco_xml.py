@@ -157,6 +157,30 @@ def _ensure_root_child(root: ET.Element, tag: str, before: str = "asset") -> ET.
     return child
 
 
+def _remove_overlapping_ground_planes(worldbody: ET.Element) -> int:
+    """Remove base-scene floor planes when a generated hfield is inserted.
+
+    A plane at ``z=0`` and a heightfield whose base is also at ``z=0`` occupy
+    the same rendering/collision surface.  OpenGL then alternates which one
+    wins depth testing (z-fighting).  The generated hfield is the authoritative
+    ground, so an inherited plane is redundant and is removed entirely.
+    """
+
+    removed = 0
+
+    def visit(parent: ET.Element) -> None:
+        nonlocal removed
+        for child in list(parent):
+            if child.tag == "geom" and child.get("type", "").lower() == "plane":
+                parent.remove(child)
+                removed += 1
+            else:
+                visit(child)
+
+    visit(worldbody)
+    return removed
+
+
 def _configure_classic_visuals(root: ET.Element) -> None:
     """Apply the classic MuJoCo blue checkerboard and gradient sky."""
 
@@ -499,6 +523,10 @@ def build_xml(terrain: TerrainMap, heightfield_filename: str = "terrain.png",
     })
 
     worldbody = _ensure_child(root, "worldbody")
+    # A supplied robot scene often contains its own plane floor.  It must not
+    # remain underneath the generated heightfield, otherwise the two surfaces
+    # are coplanar and the viewer flickers.
+    _remove_overlapping_ground_planes(worldbody)
     ET.SubElement(worldbody, "light", {"pos": "0 0 8", "directional": "true", "dir": "0 0 -1"})
     ET.SubElement(worldbody, "geom", {
         "name": _unique_name(worldbody, "geom", "terrain"), "type": "hfield", "hfield": hfield_name,

@@ -18,11 +18,11 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from .models import ArenaScene, TerrainConfig, TerrainElement, SUPPORTED_ELEMENT_TYPES
+from .terrain.models import ArenaScene, TerrainConfig, TerrainElement, SUPPORTED_ELEMENT_TYPES
 from .simulation.embedded import EmbeddedSimulationPage
-from .presets import playground_scene
-from .scene import export_scene, load_scene
-from .terrain_library import TerrainLibrary
+from .terrain.presets import playground_scene
+from .terrain.scene import export_scene, load_scene
+from .terrain.library import TerrainLibrary
 
 
 ELEMENT_LABELS = {

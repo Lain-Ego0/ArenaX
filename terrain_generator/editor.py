@@ -7,9 +7,9 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
-from .models import ArenaScene, TerrainConfig, TerrainElement, SUPPORTED_ELEMENT_TYPES
-from .presets import playground_scene
-from .scene import export_scene
+from .terrain.models import ArenaScene, TerrainConfig, TerrainElement, SUPPORTED_ELEMENT_TYPES
+from .terrain.presets import playground_scene
+from .terrain.scene import export_scene
 
 
 ELEMENT_LABELS = {

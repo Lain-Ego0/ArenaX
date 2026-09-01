@@ -127,9 +127,16 @@ pave --terrain-library /path/to/terrain_library --terrain-name rocky --view
 省略 `--terrain-name` 时读取目录中按文件名排序的第一个 XML。地形库场景按原 XML
 直接加载，不会经过程序化地形生成，也不会影响主线导出流程。
 
-项目代码边界为：`generators.py`/`mujoco_xml.py` 负责地形生成与导出，
-`simulation/`（兼容入口 `m20_sim.py`）负责机器人策略仿真，
-`terrain_library.py` 负责可选的外部 XML 场景发现与加载。
+项目代码边界为：`terrain_generator/terrain/` 负责地形数据模型、程序化生成、
+场景组合和 XML 导出；`terrain_generator/simulation/` 负责机器人策略、MuJoCo
+渲染、交互和控制面板；`terrain_generator/terrain/library.py` 负责可选的外部 XML 场景发现与加载。
+
+### 地面闪烁（Z-fighting）
+
+如果基础机器人 XML 自带 `worldbody` 平面地面，而导出器又添加了从 `z=0`
+开始的高度场，两张表面会重合，深度缓冲无法稳定选择其中一张，表现为闪烁。
+导出器现在检测并删除基础场景中的平面地面，让生成的高度场成为唯一地面；
+自定义 XML 若需要保留其他地面，请将其放到高度场范围之外，或设置不同的 Z 高度。
 
 ## ONNX 策略与机器人验证
 

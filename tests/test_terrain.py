@@ -6,8 +6,8 @@ from terrain_generator import (
     ArenaScene, TerrainConfig, export_mujoco, export_scene, generate_terrain,
     load_and_validate,
 )
-from terrain_generator.presets import playground_scene
-from terrain_generator.scene import load_scene
+from terrain_generator.terrain.presets import playground_scene
+from terrain_generator.terrain.scene import load_scene
 
 
 def test_generation_is_reproducible():
@@ -42,10 +42,10 @@ def test_playground_scene_round_trip_and_compile(tmp_path):
     paths = export_scene(scene, tmp_path / "playground")
     loaded = load_scene(paths["scene"])
     assert isinstance(loaded, ArenaScene)
-    assert len(loaded.elements) == 9
+    assert len(loaded.elements) == 10
     model = load_and_validate(paths["xml"])
     assert model.nhfield == 1
-    assert model.ngeom == 55
+    assert model.ngeom == 63
 
 
 def test_export_can_extend_a_base_mujoco_scene(tmp_path):

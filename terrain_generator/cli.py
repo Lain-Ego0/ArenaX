@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .models import ArenaScene, SUPPORTED_TERRAIN_TYPES, TerrainConfig
-from .mujoco_xml import load_and_validate
-from .presets import playground_scene
-from .scene import export_scene, load_scene
+from .terrain.models import ArenaScene, SUPPORTED_TERRAIN_TYPES, TerrainConfig
+from .terrain.mujoco_xml import load_and_validate
+from .terrain.presets import playground_scene
+from .terrain.scene import export_scene, load_scene
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.terrain_library:
         if args.xml or args.scene or args.preset or args.base_scene:
             raise SystemExit("--terrain-library cannot be combined with --xml, --scene, --preset, or --base-scene")
-        from .terrain_library import TerrainLibrary
+        from .terrain.library import TerrainLibrary
         args.xml = TerrainLibrary(args.terrain_library).resolve(args.terrain_name)
 
     if args.policy and args.robot == "m20" and not args.xml and not args.base_scene:
@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.policy:
         if args.robot != "m20":
             raise SystemExit("only the M20 runtime is currently implemented")
-        from .m20_sim import run_m20_policy
+        from .simulation.m20 import run_m20_policy
 
         run_m20_policy(
             paths["xml"], args.policy, args.robot_config,
@@ -110,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
             control_host=args.control_host, control_port=args.control_port,
         )
     elif args.view:
-        from .viewer import view_xml
+        from .simulation.viewer import view_xml
 
         view_xml(paths["xml"])
     return 0

@@ -17,6 +17,12 @@ def playground_scene(seed: int = 7) -> ArenaScene:
         TerrainElement("stairs", x=-3.6, y=2.8, name="stairs", params={
             "length": 3.2, "width": 2.4, "height": 0.8, "steps": 8,
         }),
+        # The open-frame staircase is an intentional benchmark obstacle.  It
+        # is separate from the obsolete staircase that used to be hard-coded
+        # in the bundled robot XML and caused the startup clutter.
+        TerrainElement("hollow_stairs", x=0.2, y=2.8, name="hollow_stairs", params={
+            "length": 3.2, "width": 2.4, "height": 0.8, "steps": 8, "thickness": 0.05,
+        }),
         # Keep the ramp clear of the stairs and the slalom lane below.
         TerrainElement("ramp", x=3.8, y=3.6, name="ramp", params={
             "length": 3.2, "width": 2.4, "height": 0.8, "thickness": 0.16,
