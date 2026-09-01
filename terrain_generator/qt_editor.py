@@ -22,7 +22,7 @@ from .terrain.models import ArenaScene, TerrainConfig, TerrainElement, SUPPORTED
 from .simulation.embedded import EmbeddedSimulationPage
 from .terrain.presets import playground_scene
 from .terrain.scene import export_scene, load_scene
-from .terrain.library import TerrainLibrary
+from .terrain.library import TerrainLibrary, compose_robot_scene
 
 
 ELEMENT_LABELS = {
@@ -354,12 +354,18 @@ class QtArenaEditor(QMainWindow):
         self.latest_policy: Path | None = None
         self.setWindowTitle("MuJoCo 机器人 Play 测试场地编辑器")
         self.resize(1440, 820)
+        # Keep enough horizontal room for Chinese labels and the library
+        # controls; shrinking below this point makes Qt elide/compress text.
+        self.setMinimumSize(1280, 1000)
         self.build_ui()
         self.simulation_page = EmbeddedSimulationPage(self)
         self.simulation_page.back_requested.connect(self.show_editor_page)
         self.page_stack.addWidget(self.simulation_page)
         self.apply_style()
         self.refresh()
+        # Discover the repository's default terrain_library/ directory on
+        # startup so XML assets are immediately available in the combo box.
+        self.refresh_library()
 
     def build_ui(self) -> None:
         self.page_stack = QStackedWidget()
@@ -495,7 +501,7 @@ class QtArenaEditor(QMainWindow):
 
     def apply_style(self) -> None:
         self.setStyleSheet("""
-            QMainWindow, QWidget { background: #f5f9fd; color: #17324d; font-size: 13px; }
+            QMainWindow, QWidget { background: #f5f9fd; color: #17324d; font-family: "Noto Sans CJK SC"; font-size: 14px; }
             #title { color: #125a9e; font-size: 24px; font-weight: 700; padding: 10px 2px; }
             QGroupBox { border: 1px solid #bed3e6; border-radius: 8px; margin-top: 12px; padding: 10px; }
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; color: #2374c6; }
@@ -728,11 +734,34 @@ class QtArenaEditor(QMainWindow):
             QMessageBox.warning(self, "地形库", f"文件不存在：{path}")
             self.refresh_library()
             return
+        answer = QMessageBox.question(
+            self,
+            "导入地形库场景",
+            "导入该 XML 将覆盖当前地形生成场景的仿真入口。\n"
+            "当前尚未导出的地形编辑内容不会自动保留，是否继续？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
         self.latest_xml = path
-        self.latest_policy = None
+        if self.robot_checkbox.isChecked():
+            try:
+                imported_dir = self.output_dir.expanduser().resolve() / "library_import"
+                self.latest_xml = compose_robot_scene(
+                    path, PROJECT_ROOT / BUNDLED_M20_SCENE,
+                    imported_dir / f"{path.stem}_m20.xml",
+                )
+            except Exception as exc:
+                QMessageBox.critical(self, "导入失败", f"无法将 M20 加载到地形库场景：\n{exc}")
+                return
+            self.latest_policy = PROJECT_ROOT / BUNDLED_M20_POLICY
+        else:
+            self.latest_policy = None
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
-        self.statusBar().showMessage(f"已加载地形库场景：{path.name}；点击 → 进入 MuJoCo")
+        mode = "已加载 M20 机器人" if self.latest_policy else "未加载机器人"
+        self.statusBar().showMessage(f"已加载地形库场景：{path.name}（{mode}）；点击 → 进入 MuJoCo")
 
     def open_simulation_page(self) -> None:
         if self.latest_xml is None:
@@ -750,6 +779,7 @@ def launch_qt_editor(output_dir: str | Path = "generated/editor",
     platform_plugins = Path(PyQt5.__file__).resolve().parent / "Qt5" / "plugins" / "platforms"
     os.environ.setdefault("QT_QPA_PLATFORM_PLUGIN_PATH", str(platform_plugins))
     app = QApplication.instance() or QApplication(sys.argv)
+    app.setFont(QFont("Noto Sans CJK SC", 11))
     window = QtArenaEditor(output_dir, base_scene)
     window.show()
     app.exec_()

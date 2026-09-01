@@ -3,7 +3,7 @@
 from .terrain import (
     ArenaScene, TerrainConfig, TerrainElement, TerrainMap, export_mujoco,
     export_scene, generate_terrain, load_and_validate, load_scene, save_scene,
-    TerrainAsset, TerrainLibrary, discover_terrain_xml,
+    TerrainAsset, TerrainLibrary, compose_robot_scene, discover_terrain_xml,
 )
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "save_scene",
     "TerrainAsset",
     "TerrainLibrary",
+    "compose_robot_scene",
     "discover_terrain_xml",
 ]
 
