@@ -42,12 +42,12 @@ def test_playground_scene_round_trip_and_compile(tmp_path):
     paths = export_scene(scene, tmp_path / "playground")
     loaded = load_scene(paths["scene"])
     assert isinstance(loaded, ArenaScene)
-    assert len(loaded.elements) == 10
+    assert len(loaded.elements) == 11
     model = load_and_validate(paths["xml"])
     assert model.nhfield == 1
-    # Hollow stairs contribute eight meshes; the sandpit contributes one
-    # undulating surface plus the default gravel stones.
-    assert model.ngeom == 81
+    # Hollow stairs contribute eight meshes, the trench two wedges, and the
+    # sandpit contributes one undulating surface plus the default gravel stones.
+    assert model.ngeom == 83
 
 
 def test_export_can_extend_a_base_mujoco_scene(tmp_path):

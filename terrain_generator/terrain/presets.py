@@ -13,7 +13,7 @@ def playground_scene(seed: int = 7) -> ArenaScene:
     )
     elements = [
         TerrainElement("platform", x=-10.5, y=5.0, name="high_platform", params={
-            "length": 2.4, "width": 3.0, "height": 1.0,
+            "length": 2.4, "width": 3.0, "height": 0.8,
         }),
         TerrainElement("stairs", x=-6.0, y=5.0, name="stairs", params={
             "length": 3.2, "width": 2.4, "height": 0.8, "steps": 8,
@@ -30,7 +30,11 @@ def playground_scene(seed: int = 7) -> ArenaScene:
         }),
         TerrainElement("stepping_stones", x=-9.5, y=-5.0, name="stepping_stones", params={
             "rows": 4, "cols": 6, "spacing_x": 0.45, "spacing_y": 0.6,
-            "size": 0.3, "height": 0.3,
+            "size": 0.2, "height": 0.3,
+        }),
+        TerrainElement("trench", x=0.8, y=-5.0, name="trench", params={
+            "length": 2.4, "width": 2.4, "gap": 0.3, "height": 0.3,
+            "top_width": 0.3, "bottom_width": 1.05,
         }),
         TerrainElement("triangle", x=-2.5, y=-5.0, name="triangle_obstacle", params={
             "count": 4, "length": 0.9, "width": 1.0, "height": 0.85,

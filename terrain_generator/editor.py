@@ -14,6 +14,7 @@ from .terrain.scene import export_scene
 
 ELEMENT_LABELS = {
     "platform": "高台",
+    "trench": "鸿沟",
     "stairs": "台阶",
     "hollow_stairs": "镂空台阶",
     "ramp": "斜坡",
@@ -27,10 +28,12 @@ ELEMENT_LABELS = {
 
 DEFAULT_PARAMS = {
     "platform": {"length": 2.0, "width": 2.0, "height": 0.8},
+    "trench": {"length": 2.4, "width": 2.4, "gap": 0.3, "height": 0.3,
+               "top_width": 0.3, "bottom_width": 1.05},
     "stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8},
     "hollow_stairs": {"length": 3.2, "width": 2.4, "height": 0.8, "steps": 8, "thickness": 0.05},
     "ramp": {"length": 3.0, "width": 2.0, "height": 0.8, "thickness": 0.16},
-    "stepping_stones": {"rows": 4, "cols": 6, "spacing_x": 0.45, "spacing_y": 0.6, "size": 0.3, "height": 0.3},
+    "stepping_stones": {"rows": 4, "cols": 6, "spacing_x": 0.45, "spacing_y": 0.6, "size": 0.2, "height": 0.3},
     "triangle": {"count": 4, "length": 0.9, "width": 1.0, "height": 0.8, "angle": 30.0, "gap": 0.28, "stagger": 0.8, "pair_yaw": 90.0, "group_spacing": 1.3, "pair_spacing": 1.18},
     "tire_ring": {"count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10, "upright": False},
     "slalom_poles": {"count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32},

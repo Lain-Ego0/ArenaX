@@ -311,6 +311,41 @@ def _add_wedge_mesh(asset: ET.Element, mesh_name: str, length: float,
     ET.SubElement(asset, "mesh", {"name": mesh_name, "vertex": vertices, "face": faces})
 
 
+def _add_truncated_trapezoid_mesh(asset: ET.Element, mesh_name: str,
+                                  run: float, width: float, height: float,
+                                  top_width: float, bottom_width: float,
+                                  reverse: bool = False) -> None:
+    """Create an extruded, truncated isosceles-trapezoid side of a trench.
+
+    The local X profile is measured from the outside edge (``s=0``) toward
+    the center gap (``s=run``).  The lower base starts at the outside edge and
+    the upper base ends at the center edge, so changing either base keeps the
+    cut symmetric about the trench centerline.
+    """
+
+    run = max(float(run), 1e-5)
+    width = max(float(width), 1e-5)
+    height = max(float(height), 0.0)
+    top_width = float(np.clip(top_width, 0.0, run))
+    bottom_width = float(np.clip(bottom_width, 0.0, run))
+    # Walk the perimeter without crossing diagonals: outer bottom -> inner
+    # bottom -> inner top -> outer top.  The previous ordering swapped the
+    # two top vertices and produced self-intersecting triangles that rendered
+    # as long spikes extending beyond the trench.
+    profile = [(0.0, 0.0), (bottom_width, 0.0),
+               (run, height), (run - top_width, height)]
+    if reverse:
+        # Mirroring in X reverses the winding.  Reverse the mirrored list as
+        # well so both left and right ramps keep outward-facing normals.
+        profile = [(run - x, z) for x, z in profile][::-1]
+    vertices: list[float] = []
+    for y in (-width / 2, width / 2):
+        vertices.extend(value for x, z in profile for value in (x - run / 2, y, z))
+    faces = "0 1 2 0 2 3 4 6 5 4 7 6 0 4 5 0 5 1 1 5 6 1 6 2 2 6 7 2 7 3 3 7 4 3 4 0"
+    ET.SubElement(asset, "mesh", {"name": mesh_name,
+                                   "vertex": _fmt(tuple(vertices)), "face": faces})
+
+
 def _add_sandpit_mesh(asset: ET.Element, worldbody: ET.Element,
                       element: TerrainElement, prefix: str, length: float,
                       width: float, depth: float, surface_height: float,
@@ -412,7 +447,7 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
     p = element.params
     prefix = element.name or f"{element.kind}_{index:03d}"
     rgba = {
-        "platform": "0.16 0.40 0.72 1", "stairs": "0.72 0.42 0.14 1",
+        "platform": "0.16 0.40 0.72 1", "trench": "0.48 0.28 0.12 1", "stairs": "0.72 0.42 0.14 1",
         "hollow_stairs": "0.82 0.56 0.12 1", "ramp": "0.18 0.52 0.28 1",
         "stepping_stones": "0.35 0.35 0.38 1", "triangle": "0.70 0.18 0.10 1",
         "tire_ring": "0.04 0.04 0.04 1", "slalom_poles": "0.84 0.18 0.12 1",
@@ -423,6 +458,35 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         length, width, height = (float(p.get(key, default)) for key, default in (
             ("length", 2.0), ("width", 2.0), ("height", 0.8)))
         _add_box(worldbody, prefix, element, 0.0, 0.0, height / 2, (length / 2, width / 2, height / 2), rgba)
+
+    elif element.kind == "trench":
+        # Two opposing truncated isosceles trapezoids leave a low central
+        # gap.  The top/bottom bases are measured outward from the centerline.
+        length = max(float(p.get("length", 2.4)), 0.01)
+        width = max(float(p.get("width", 2.4)), 0.01)
+        gap = np.clip(float(p.get("gap", 0.3)), 0.0, max(length - 1e-4, 0.0))
+        side_length = max((length - gap) / 2, 1e-4)
+        height = max(float(p.get("height", 0.3)), 0.0)
+        top_width = float(p.get("top_width", 0.3))
+        bottom_width = float(p.get("bottom_width", side_length))
+        left_mesh = f"{prefix}_left_mesh"
+        right_mesh = f"{prefix}_right_mesh"
+        _add_truncated_trapezoid_mesh(asset, left_mesh, side_length, width, height,
+                                      top_width, bottom_width, reverse=False)
+        _add_truncated_trapezoid_mesh(asset, right_mesh, side_length, width, height,
+                                      top_width, bottom_width, reverse=True)
+        left_attrs = {"name": f"{prefix}_left", "type": "mesh", "mesh": left_mesh,
+                      "rgba": rgba, "friction": "0.8 0.1 0.1"}
+        left_attrs.update(_local_pose(element, -(gap + side_length) / 2, 0.0, 0.0))
+        right_attrs = {"name": f"{prefix}_right", "type": "mesh", "mesh": right_mesh,
+                       "rgba": rgba, "friction": "0.8 0.1 0.1"}
+        right_attrs.update(_local_pose(element, (gap + side_length) / 2, 0.0, 0.0))
+        if element.yaw:
+            yaw = _fmt((0.0, 0.0, element.yaw))
+            left_attrs["euler"] = yaw
+            right_attrs["euler"] = yaw
+        ET.SubElement(worldbody, "geom", left_attrs)
+        ET.SubElement(worldbody, "geom", right_attrs)
 
     elif element.kind in ("stairs", "hollow_stairs"):
         length = float(p.get("length", 3.0))
@@ -610,6 +674,26 @@ def build_xml(terrain: TerrainMap, heightfield_filename: str = "terrain.png",
         option.attrib.update({"gravity": "0 0 -9.81", "integrator": "RK4"})
     _configure_classic_visuals(root)
 
+    # Base robot scenes often carry a tiny ``<statistic extent="0.8">``
+    # intended for the original compact demo.  MuJoCo uses this extent for
+    # view clipping, so a larger generated arena would disappear outside a
+    # small radius.  Recompute it from the requested field dimensions.
+    statistic = _ensure_root_child(root, "statistic", before="visual")
+    statistic.attrib.update({
+        "center": "0 0 0",
+        "extent": f"{max(config.length, config.width, 2.0) / 2:.6g}",
+    })
+    visual = _ensure_root_child(root, "visual")
+    visual_map = _ensure_child(visual, "map")
+    arena_span = max(config.length, config.width, 2.0)
+    # The MuJoCo defaults (fog ending around 10 m) make the far side of the
+    # enlarged arena look as if it were clipped.  Scale the haze range with
+    # the arena so distant obstacles remain visible.
+    visual_map.attrib.update({
+        "fogstart": f"{arena_span * 0.55:.6g}",
+        "fogend": f"{arena_span * 1.8:.6g}",
+    })
+
     asset = _ensure_child(root, "asset")
     skybox = next((item for item in asset.findall("texture") if item.get("type") == "skybox"), None)
     if skybox is None:
@@ -639,19 +723,32 @@ def build_xml(terrain: TerrainMap, heightfield_filename: str = "terrain.png",
     })
 
     worldbody = _ensure_child(root, "worldbody")
-    # A supplied robot scene often contains its own plane floor.  It must not
-    # remain underneath the generated heightfield, otherwise the two surfaces
-    # are coplanar and the viewer flickers.
-    _remove_overlapping_ground_planes(worldbody)
+    # Flat scenes use the plane supplied by the MuJoCo template.  Procedural
+    # terrain types need the generated heightfield, so remove an inherited
+    # plane only in that case; otherwise the two surfaces would z-fight.
+    use_heightfield = config.kind != "flat"
+    if use_heightfield:
+        _remove_overlapping_ground_planes(worldbody)
     # The bundled M20 template historically included seven demonstration
     # boxes.  Terrain components are now generated by this exporter, so do
     # not carry those legacy obstacles into the generated scene.
     _remove_legacy_m20_obstacles(worldbody)
     ET.SubElement(worldbody, "light", {"pos": "0 0 8", "directional": "true", "dir": "0 0 -1"})
-    ET.SubElement(worldbody, "geom", {
-        "name": _unique_name(worldbody, "geom", "terrain"), "type": "hfield", "hfield": hfield_name,
-        "material": material_name, "contype": "1", "conaffinity": "1",
-    })
+    if use_heightfield:
+        ET.SubElement(worldbody, "geom", {
+            "name": _unique_name(worldbody, "geom", "terrain"), "type": "hfield", "hfield": hfield_name,
+            "material": material_name, "contype": "1", "conaffinity": "1",
+        })
+    elif not any(
+        geom.get("type", "").lower() == "plane" for geom in worldbody.iter("geom")
+    ):
+        # Standalone flat exports have no base scene to provide a floor.  Add
+        # one ordinary MuJoCo plane rather than a second generated surface.
+        ET.SubElement(worldbody, "geom", {
+            "name": _unique_name(worldbody, "geom", "ground"), "type": "plane",
+            "size": "0 0 0.05", "material": material_name,
+            "contype": "1", "conaffinity": "1",
+        })
     for index, obstacle in enumerate(terrain.obstacles):
         ET.SubElement(worldbody, "geom", {
             "name": f"obstacle_{index:03d}", "type": "box",

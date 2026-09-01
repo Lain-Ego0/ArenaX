@@ -27,6 +27,7 @@ from .terrain.library import TerrainLibrary
 
 ELEMENT_LABELS = {
     "platform": "高台",
+    "trench": "鸿沟",
     "stairs": "台阶",
     "hollow_stairs": "镂空台阶",
     "ramp": "斜坡",
@@ -40,10 +41,12 @@ ELEMENT_LABELS = {
 
 DEFAULT_PARAMS = {
     "platform": {"length": 2.0, "width": 2.0, "height": 0.8},
+    "trench": {"length": 2.4, "width": 2.4, "gap": 0.3, "height": 0.3,
+               "top_width": 0.3, "bottom_width": 1.05},
     "stairs": {"length": 3.0, "width": 2.0, "height": 0.8, "steps": 8},
     "hollow_stairs": {"length": 3.2, "width": 2.4, "height": 0.8, "steps": 8, "thickness": 0.05},
     "ramp": {"length": 3.0, "width": 2.0, "height": 0.8, "thickness": 0.16},
-    "stepping_stones": {"rows": 4, "cols": 6, "spacing_x": 0.45, "spacing_y": 0.6, "size": 0.3, "height": 0.3},
+    "stepping_stones": {"rows": 4, "cols": 6, "spacing_x": 0.45, "spacing_y": 0.6, "size": 0.2, "height": 0.3},
     "triangle": {"count": 4, "length": 0.9, "width": 1.0, "height": 0.8, "angle": 30.0, "gap": 0.28, "stagger": 0.8, "pair_yaw": 90.0, "group_spacing": 1.3, "pair_spacing": 1.18},
     "tire_ring": {"count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10, "upright": False},
     "slalom_poles": {"count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32},
@@ -55,6 +58,7 @@ DEFAULT_PARAMS = {
 
 PARAM_SCHEMA = {
     "platform": [("length", "长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "高度", "m", "float")],
+    "trench": [("length", "总长度", "m", "float"), ("width", "宽度", "m", "float"), ("gap", "中间间隙", "m", "float"), ("height", "高度", "m", "float"), ("top_width", "上底", "m", "float"), ("bottom_width", "下底", "m", "float")],
     "stairs": [("length", "总长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "总高度", "m", "float"), ("steps", "级数", "级", "int")],
     "hollow_stairs": [("length", "总长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "总高度", "m", "float"), ("steps", "级数", "级", "int"), ("thickness", "踏板厚度", "m", "float")],
     "ramp": [("length", "长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "高度", "m", "float")],
@@ -71,7 +75,7 @@ PARAM_SCHEMA = {
 }
 
 COLORS = {
-    "platform": "#2374c6", "stairs": "#3d8ed0", "hollow_stairs": "#5b9fda",
+    "platform": "#2374c6", "trench": "#8b5a2b", "stairs": "#3d8ed0", "hollow_stairs": "#5b9fda",
     "ramp": "#2a9d8f", "stepping_stones": "#6b7c93", "triangle": "#e76f51",
     "tire_ring": "#263238", "slalom_poles": "#d1493f", "sandpit": "#c89b5a", "high_wall": "#315f9c",
 }
@@ -131,7 +135,7 @@ class PreviewWidget(QWidget):
             element = self.arena.elements[index]
             dx, dy = rotate_xy(x - element.x, y - element.y, -element.yaw)
             params = element.params
-            if element.kind in ("platform", "stairs", "hollow_stairs", "ramp", "sandpit", "high_wall"):
+            if element.kind in ("platform", "trench", "stairs", "hollow_stairs", "ramp", "sandpit", "high_wall"):
                 length = float(params.get("length", 2.4))
                 width = float(params.get("width", params.get("thickness", 1.0)))
                 if abs(dx) <= length / 2 + 0.25 and abs(dy) <= width / 2 + 0.25:
@@ -166,6 +170,21 @@ class PreviewWidget(QWidget):
         if element.kind == "platform":
             shape = self.polygon(element, self.rect_points(element, float(p.get("length", 2)), float(p.get("width", 2))))
             painter.drawPolygon(shape)
+        elif element.kind == "trench":
+            length = float(p.get("length", 2.4))
+            width = float(p.get("width", 2.4))
+            gap = min(max(float(p.get("gap", 0.3)), 0.0), length)
+            side = (length - gap) / 2
+            for cx in (-(gap + side) / 2, (gap + side) / 2):
+                painter.drawPolygon(self.polygon(element, [
+                    (cx - side / 2, -width / 2), (cx + side / 2, -width / 2),
+                    (cx + side / 2, width / 2), (cx - side / 2, width / 2),
+                ]))
+            painter.setBrush(QBrush(QColor("#3a2515")))
+            painter.drawPolygon(self.polygon(element, [
+                (-gap / 2, -width / 2), (gap / 2, -width / 2),
+                (gap / 2, width / 2), (-gap / 2, width / 2),
+            ]))
         elif element.kind in ("stairs", "hollow_stairs"):
             length, width = float(p.get("length", 3)), float(p.get("width", 2))
             steps = max(1, int(p.get("steps", 8)))

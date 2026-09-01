@@ -9,6 +9,7 @@ import numpy as np
 SUPPORTED_TERRAIN_TYPES = ("flat", "slope", "stairs", "noise", "obstacle_mix")
 SUPPORTED_ELEMENT_TYPES = (
     "platform",
+    "trench",
     "stairs",
     "hollow_stairs",
     "ramp",
