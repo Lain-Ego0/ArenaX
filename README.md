@@ -19,6 +19,22 @@ Policy and Arena Validation Environment
 
 建议使用项目自己的 `.venv` 环境：
 
+Linux/macOS 可以使用仓库根目录的一键脚本自动创建虚拟环境并安装依赖：
+
+```bash
+./install.sh --run
+```
+
+不启动编辑器、只完成安装时运行 `./install.sh`。Windows PowerShell 对应运行：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\install.ps1 -Run
+```
+
+脚本会复用已有的 `.venv`，不会重复创建环境；如果系统没有可用的 Python 3.10+
+解释器，需要先安装 Python。
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
