@@ -83,6 +83,9 @@ COLORS = {
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BUNDLED_M20_SCENE = Path("assets/m20/mjcf/scene.xml")
 BUNDLED_M20_POLICY = Path("policies/m20/policy.onnx")
+BUNDLED_GO2_SCENE = Path("assets/go2/mjcf/scene.xml")
+BUNDLED_GO2_POLICY = Path("policies/go2/policy.onnx")
+BUNDLED_GO2_CONFIG = Path("configs/go2.yaml")
 DEFAULT_TERRAIN_LIBRARY = PROJECT_ROOT / "terrain_library"
 
 
@@ -462,9 +465,13 @@ class QtArenaEditor(QMainWindow):
         self.library_open_button.clicked.connect(self.open_library_scene)
         library_form.addRow(self.library_open_button)
         right_layout.addWidget(library_box)
-        self.robot_checkbox = QCheckBox("添加 M20 机器人并运行策略")
-        self.robot_checkbox.setToolTip("勾选后使用仓库内置 M20 和 policies/m20/policy.onnx")
-        right_layout.addWidget(self.robot_checkbox)
+        self.robot_combo = QComboBox()
+        self.robot_combo.addItem("不加载机器人", None)
+        self.robot_combo.addItem("M20", "m20")
+        self.robot_combo.addItem("Go2", "go2")
+        self.robot_combo.setToolTip("选择机器人及其对应策略；默认不加载机器人")
+        right_layout.addWidget(QLabel("机器人策略"))
+        right_layout.addWidget(self.robot_combo)
         spawn_hint = QLabel(
             "⚠ M20 默认初始位置：场地中心 (x=0, y=0)，基座高度约 1.0 m。\n"
             "请避开红色标记区域放置障碍；使用自定义机器人 XML 时请以其 freejoint 位姿为准。"
@@ -688,13 +695,16 @@ class QtArenaEditor(QMainWindow):
             return None
 
     def export_and_view(self) -> None:
-        robot_enabled = self.robot_checkbox.isChecked()
-        bundled_scene = PROJECT_ROOT / BUNDLED_M20_SCENE if robot_enabled else None
+        robot = self.robot_combo.currentData()
+        robot_enabled = robot is not None
+        scene_ref = BUNDLED_M20_SCENE if robot == "m20" else BUNDLED_GO2_SCENE
+        policy_ref = BUNDLED_M20_POLICY if robot == "m20" else BUNDLED_GO2_POLICY
+        bundled_scene = PROJECT_ROOT / scene_ref if robot_enabled else None
         if robot_enabled:
-            bundled_policy = PROJECT_ROOT / BUNDLED_M20_POLICY
+            bundled_policy = PROJECT_ROOT / policy_ref
             if not bundled_scene.is_file() or not bundled_policy.is_file():
                 QMessageBox.critical(
-                    self, "M20 资源缺失",
+                    self, f"{robot} 资源缺失",
                     f"找不到内置 M20 场景或策略：\n{bundled_scene}\n{bundled_policy}",
                 )
                 return
@@ -703,10 +713,10 @@ class QtArenaEditor(QMainWindow):
         if not paths:
             return
         self.latest_xml = paths["xml"]
-        self.latest_policy = PROJECT_ROOT / BUNDLED_M20_POLICY if robot_enabled else None
+        self.latest_policy = PROJECT_ROOT / policy_ref if robot_enabled else None
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
-        mode = "M20 策略场景" if robot_enabled else "普通场景"
+        mode = f"{robot} 策略场景" if robot_enabled else "普通场景"
         self.statusBar().showMessage(f"已导出 {mode}：点击右侧 → 进入内嵌 MuJoCo 页面")
 
     def browse_library(self) -> None:
@@ -745,28 +755,34 @@ class QtArenaEditor(QMainWindow):
         if answer != QMessageBox.Yes:
             return
         self.latest_xml = path
-        if self.robot_checkbox.isChecked():
+        robot = self.robot_combo.currentData()
+        if robot is not None:
+            robot_scene = BUNDLED_M20_SCENE if robot == "m20" else BUNDLED_GO2_SCENE
+            robot_policy = BUNDLED_M20_POLICY if robot == "m20" else BUNDLED_GO2_POLICY
             try:
                 imported_dir = self.output_dir.expanduser().resolve() / "library_import"
                 self.latest_xml = compose_robot_scene(
-                    path, PROJECT_ROOT / BUNDLED_M20_SCENE,
-                    imported_dir / f"{path.stem}_m20.xml",
+                    path, PROJECT_ROOT / robot_scene,
+                    imported_dir / f"{path.stem}_{robot}.xml",
                 )
             except Exception as exc:
                 QMessageBox.critical(self, "导入失败", f"无法将 M20 加载到地形库场景：\n{exc}")
                 return
-            self.latest_policy = PROJECT_ROOT / BUNDLED_M20_POLICY
+            self.latest_policy = PROJECT_ROOT / robot_policy
         else:
             self.latest_policy = None
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
-        mode = "已加载 M20 机器人" if self.latest_policy else "未加载机器人"
+        mode = f"已加载 {robot} 机器人" if self.latest_policy else "未加载机器人"
         self.statusBar().showMessage(f"已加载地形库场景：{path.name}（{mode}）；点击 → 进入 MuJoCo")
 
     def open_simulation_page(self) -> None:
         if self.latest_xml is None:
             return
-        config = PROJECT_ROOT / "configs" / "m20.yaml" if self.latest_policy else None
+        robot = self.robot_combo.currentData()
+        config = None
+        if self.latest_policy:
+            config = PROJECT_ROOT / ("configs/m20.yaml" if robot == "m20" else "configs/go2.yaml")
         self.simulation_page.start(self.latest_xml, self.latest_policy, config)
         self.page_stack.setCurrentWidget(self.simulation_page)
 

@@ -395,13 +395,13 @@ class M20Simulation:
 
     def _print_contract(self) -> None:
         expected_input = self.num_obs * (self.num_obs_hist + 1)
-        print(f"M20 XML: {self.xml_path}")
+        print(f"Robot XML: {self.xml_path}")
         print(f"ONNX: {self.policy.path}")
         print(f"Policy contract: input={self.policy.input_size}, expected={expected_input}, output={self.num_actions}")
-        print("M20 joint order:", ", ".join(self.joint_names))
+        print("Robot joint order:", ", ".join(self.joint_names))
         if self.policy.input_size is not None and self.policy.input_size != expected_input:
             raise ValueError(
-                f"M20 DreamWaQ policy expects {self.policy.input_size} observations, "
+                f"Robot policy expects {self.policy.input_size} observations, "
                 f"but config produces {expected_input}"
             )
 

@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-test-ball", action="store_true", help="do not add the demo free ball")
     parser.add_argument("--edit", action="store_true", help="open the graphical arena editor")
     parser.add_argument("--policy", type=Path, help="run an ONNX policy in the generated or supplied XML scene")
-    parser.add_argument("--robot", choices=("m20",), default="m20", help="robot profile for ONNX inference")
+    parser.add_argument("--robot", choices=("m20", "go2"), default="m20", help="robot profile for ONNX inference")
     parser.add_argument("--robot-config", type=Path, help="YAML policy/runtime profile")
     parser.add_argument("--duration", type=float, default=30.0, help="simulation duration per policy episode")
     parser.add_argument("--episodes", type=int, default=1, help="number of policy episodes")
@@ -64,8 +64,10 @@ def main(argv: list[str] | None = None) -> int:
         from .terrain.library import TerrainLibrary
         args.xml = TerrainLibrary(args.terrain_library).resolve(args.terrain_name)
 
-    if args.policy and args.robot == "m20" and not args.xml and not args.base_scene:
-        bundled_scene = Path(__file__).resolve().parent.parent / "assets" / "m20" / "mjcf" / "scene.xml"
+    if args.policy and not args.xml and not args.base_scene:
+        robot_dir = "m20" if args.robot == "m20" else "go2"
+        scene_name = "scene.xml"
+        bundled_scene = Path(__file__).resolve().parent.parent / "assets" / robot_dir / "mjcf" / scene_name
         if bundled_scene.is_file():
             args.base_scene = bundled_scene
 
@@ -100,9 +102,12 @@ def main(argv: list[str] | None = None) -> int:
         model = load_and_validate(paths["xml"])
         print(f"MuJoCo validation passed: {model.ngeom} geoms, {model.nhfield} heightfield")
     if args.policy:
-        if args.robot != "m20":
-            raise SystemExit("only the M20 runtime is currently implemented")
         from .simulation.m20 import run_m20_policy
+
+        if args.robot_config is None:
+            bundled_config = Path(__file__).resolve().parent.parent / "configs" / f"{args.robot}.yaml"
+            if bundled_config.is_file():
+                args.robot_config = bundled_config
 
         run_m20_policy(
             paths["xml"], args.policy, args.robot_config,

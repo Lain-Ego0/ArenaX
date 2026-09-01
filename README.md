@@ -125,6 +125,24 @@ pave \
 编辑器右侧提供一个导出操作、一个机器人选项和一个页面跳转箭头：
 
 - **添加 M20 机器人并运行策略**：勾选后，导出时自动使用仓库内置 M20 和 `policies/m20/policy.onnx`。
+
+- **M20 / Go2 单机器人切换**：M20 和 Go2 使用各自独立的 MuJoCo 场景、资产、策略和配置。Go2 的 `go2_amp_dreamwaq` 第 20000 步检查点保存在 `policies/go2/checkpoints/model_20000.pt`，转换后的唯一部署策略保存在 `policies/go2/policy.onnx`。
+
+  ```bash
+  .venv/bin/python -c "import mujoco; m=mujoco.MjModel.from_xml_path('assets/go2/mjcf/scene.xml'); print(m.nbody, m.njnt, m.nu)"
+  ```
+
+  PAVE 控制器按所选机器人加载对应 ONNX 策略。`model_20000.pt` 作为 Go2 训练检查点保留，部署时只使用 `policies/go2/policy.onnx`。
+
+  命令行可在 M20 与 Go2 之间切换：
+
+  ```bash
+  pave --robot m20 --policy policies/m20/policy.onnx
+  pave --robot go2 --policy policies/go2/policy.onnx
+  ```
+
+  M20 与 Go2 使用独立的三层资源，不会共享关节顺序或控制参数：
+  `assets/<robot>/mjcf/`（模型资产）→ `policies/<robot>/`（策略）→ `configs/<robot>.yaml`（观测、PD 与关节映射）。Go2 的 FR/RL/RR 默认姿态已与训练部署脚本一致，避免启动时向一侧倾斜。
 - **导出并在 MuJoCo 查看**：导出完成后点击右侧 `→`，进入同一个 PyQt 应用的第二页。第二页左侧仅保留速度和手动重置，右侧是通过 MuJoCo `Renderer` 内嵌的轻量化渲染画面；勾选机器人选项时同时运行 M20 ONNX 策略。
 
 编辑器预览中的红色圆形标记是内置 M20 的默认出生区域（世界坐标 `x=0, y=0`，

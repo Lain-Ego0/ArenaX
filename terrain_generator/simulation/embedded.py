@@ -137,8 +137,9 @@ class MuJoCoRenderWorker(QThread):
             mujoco.mjv_defaultOption(render_options)
             render_options.geomgroup[1] = 0
             render_options.geomgroup[2] = 1
+            robot_label = "Go2" if self.config_path and self.config_path.stem == "go2" else "M20"
             self.status_changed.emit(
-                "M20 ONNX 策略已启动" if simulation is not None else "MuJoCo 场景已加载"
+                f"{robot_label} ONNX 策略已启动" if simulation is not None else "MuJoCo 场景已加载"
             )
 
             # Render at a stable cadence while stepping simulation in small
@@ -349,7 +350,7 @@ class EmbeddedSimulationPage(QWidget):
         if self.speed_slider is not None:
             self.speed_slider.setValue(100)
         if policy_path is None:
-            self.status_label.setText("场景已准备，机器人控制需要勾选 M20 策略")
+            self.status_label.setText("场景已准备，请先选择机器人策略")
         self.worker.start()
 
     def stop_worker(self) -> None:
