@@ -19,9 +19,10 @@ from PyQt5.QtWidgets import (
 )
 
 from .models import ArenaScene, TerrainConfig, TerrainElement, SUPPORTED_ELEMENT_TYPES
-from .embedded_mujoco import EmbeddedSimulationPage
+from .simulation.embedded import EmbeddedSimulationPage
 from .presets import playground_scene
 from .scene import export_scene, load_scene
+from .terrain_library import TerrainLibrary
 
 
 ELEMENT_LABELS = {
@@ -395,6 +396,26 @@ class QtArenaEditor(QMainWindow):
         scene_form.addRow("输出目录", self.output_edit)
         scene_form.addRow("自定义机器人 XML（可选）", self.base_scene_edit)
         right_layout.addWidget(scene_box)
+        library_box = QGroupBox("地形库（可选 XML 目录）")
+        library_form = QFormLayout(library_box)
+        library_row = QHBoxLayout()
+        self.library_edit = QLineEdit()
+        self.library_edit.setPlaceholderText("放入独立 .xml 地形文件的文件夹")
+        browse_library = QPushButton("浏览")
+        browse_library.clicked.connect(self.browse_library)
+        refresh_library = QPushButton("刷新")
+        refresh_library.clicked.connect(self.refresh_library)
+        library_row.addWidget(self.library_edit, 1)
+        library_row.addWidget(browse_library)
+        library_row.addWidget(refresh_library)
+        library_form.addRow("目录", library_row)
+        self.library_combo = QComboBox()
+        self.library_combo.setPlaceholderText("选择 XML 场景")
+        library_form.addRow("场景", self.library_combo)
+        self.library_open_button = QPushButton("加载选中的地形库场景")
+        self.library_open_button.clicked.connect(self.open_library_scene)
+        library_form.addRow(self.library_open_button)
+        right_layout.addWidget(library_box)
         self.robot_checkbox = QCheckBox("添加 M20 机器人并运行策略")
         self.robot_checkbox.setToolTip("勾选后使用仓库内置 M20 和 policies/m20/policy.onnx")
         right_layout.addWidget(self.robot_checkbox)
@@ -627,6 +648,37 @@ class QtArenaEditor(QMainWindow):
         self.next_button.setEnabled(True)
         mode = "M20 策略场景" if robot_enabled else "普通场景"
         self.statusBar().showMessage(f"已导出 {mode}：点击右侧 → 进入内嵌 MuJoCo 页面")
+
+    def browse_library(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, "选择地形库目录")
+        if directory:
+            self.library_edit.setText(directory)
+            self.refresh_library()
+
+    def refresh_library(self) -> None:
+        self.library_combo.clear()
+        directory = self.library_edit.text().strip()
+        if not directory:
+            return
+        for asset in TerrainLibrary(directory).assets():
+            self.library_combo.addItem(asset.name, str(asset.path))
+        self.statusBar().showMessage(f"地形库已发现 {self.library_combo.count()} 个 XML 场景")
+
+    def open_library_scene(self) -> None:
+        path_text = self.library_combo.currentData()
+        if not path_text:
+            QMessageBox.information(self, "地形库", "请先选择一个 XML 场景")
+            return
+        path = Path(str(path_text)).expanduser().resolve()
+        if not path.is_file():
+            QMessageBox.warning(self, "地形库", f"文件不存在：{path}")
+            self.refresh_library()
+            return
+        self.latest_xml = path
+        self.latest_policy = None
+        self.next_button.setVisible(True)
+        self.next_button.setEnabled(True)
+        self.statusBar().showMessage(f"已加载地形库场景：{path.name}；点击 → 进入 MuJoCo")
 
     def open_simulation_page(self) -> None:
         if self.latest_xml is None:

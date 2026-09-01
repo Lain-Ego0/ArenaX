@@ -110,6 +110,27 @@ pave \
 
 内嵌模式不再启动独立的 MuJoCo viewer 或控制面板进程，避免 GLFW 键盘快捷键和 Qt 插件冲突。
 
+仿真页画布以 1280×720（720p）渲染，使用 30 FPS 显示并在后台批量补齐物理步，
+避免渲染阻塞策略推理。选中画布后，鼠标滚轮缩放、左键拖动旋转、右键拖动平移；
+`W/S` 前后、`A/D` 左右平移、`Q/E` 左右转向。左侧“全向速度”滑块可在 0–2 m/s
+调整（默认 1 m/s）。
+
+## 地形库（可选扩展）
+
+可以把独立的 MuJoCo XML 文件直接放进一个目录，在编辑器右侧“地形库”中刷新并加载，
+或通过命令行选择：
+
+```bash
+pave --terrain-library /path/to/terrain_library --terrain-name rocky --view
+```
+
+省略 `--terrain-name` 时读取目录中按文件名排序的第一个 XML。地形库场景按原 XML
+直接加载，不会经过程序化地形生成，也不会影响主线导出流程。
+
+项目代码边界为：`generators.py`/`mujoco_xml.py` 负责地形生成与导出，
+`simulation/`（兼容入口 `m20_sim.py`）负责机器人策略仿真，
+`terrain_library.py` 负责可选的外部 XML 场景发现与加载。
+
 ## ONNX 策略与机器人验证
 
 PAVE 当前接入 M20 的 DreamWaQ ONNX 推理运行时。M20 的 MJCF、STL 网格和 ONNX 策略均已放入本仓库的 `assets/m20/` 和 `policies/m20/`，不再依赖下载目录。也可以通过命令行传入其他策略或机器人 XML。

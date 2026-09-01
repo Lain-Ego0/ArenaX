@@ -9,10 +9,11 @@ from threading import Event
 from typing import Any
 
 import mujoco
-from PyQt5.QtCore import QThread, Qt, pyqtSignal
-from PyQt5.QtGui import QImage, QPixmap
+import numpy as np
+from PyQt5.QtCore import QPoint, QThread, Qt, pyqtSignal
+from PyQt5.QtGui import QImage, QPixmap, QKeyEvent, QWheelEvent
 from PyQt5.QtWidgets import (
-    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget,
 )
 
 from .m20_sim import M20Simulation
@@ -26,8 +27,8 @@ class MuJoCoRenderWorker(QThread):
     error_occurred = pyqtSignal(str)
 
     def __init__(self, xml_path: Path, policy_path: Path | None = None,
-                 config_path: Path | None = None, width: int = 960,
-                 height: int = 640) -> None:
+                 config_path: Path | None = None, width: int = 1280,
+                 height: int = 720) -> None:
         super().__init__()
         self.xml_path = xml_path
         self.policy_path = policy_path
@@ -44,14 +45,20 @@ class MuJoCoRenderWorker(QThread):
         self.stop_event.set()
 
     def _apply_commands(self, simulation: M20Simulation | None,
-                        model: mujoco.MjModel, data: mujoco.MjData) -> None:
+                        model: mujoco.MjModel, data: mujoco.MjData,
+                        camera: mujoco.MjvCamera | None = None) -> None:
+        if camera is None:
+            camera = self._camera(simulation)
         while True:
             try:
                 operation, values = self.commands.get_nowait()
             except queue.Empty:
                 return
             if operation == "stop":
-                self.stop_event.set()
+                if simulation is not None:
+                    simulation.command.stop()
+                else:
+                    self.stop_event.set()
             elif operation == "reset":
                 if simulation is not None:
                     simulation.reset()
@@ -62,6 +69,22 @@ class MuJoCoRenderWorker(QThread):
                 simulation.command.adjust(int(values["axis"]), float(values["delta"]))
             elif simulation is not None and operation == "gear":
                 simulation.command.set_gear(int(values["gear"]))
+            elif simulation is not None and operation == "speed":
+                simulation.command.set_speed(float(values["speed"]))
+            elif simulation is not None and operation == "motion":
+                simulation.command.set_motion(float(values.get("vx", 0.0)),
+                                              float(values.get("vy", 0.0)),
+                                              float(values.get("yaw", 0.0)))
+            elif operation == "zoom":
+                camera.distance = float(np.clip(camera.distance * float(values.get("factor", 1.0)), 0.2, 100.0))
+            elif operation == "rotate":
+                camera.azimuth += float(values.get("dx", 0.0))
+                camera.elevation = float(np.clip(camera.elevation + float(values.get("dy", 0.0)), -89.0, 89.0))
+            elif operation == "pan":
+                # Pan in camera-local screen coordinates.  The scale is
+                # proportional to distance, making the gesture predictable.
+                camera.lookat[0] += float(values.get("dx", 0.0)) * camera.distance * 0.002
+                camera.lookat[1] += float(values.get("dy", 0.0)) * camera.distance * 0.002
 
     @staticmethod
     def _camera(simulation: M20Simulation | None) -> mujoco.MjvCamera:
@@ -101,21 +124,28 @@ class MuJoCoRenderWorker(QThread):
                 "M20 ONNX 策略已启动" if simulation is not None else "MuJoCo 场景已加载"
             )
 
-            timestep = float(model.opt.timestep)
-            next_step = time.perf_counter()
-            next_frame = 0.0
+            # Render at a stable cadence while stepping simulation in small
+            # batches.  This avoids a sleep/wake cycle for every 5 ms physics
+            # tick and keeps Qt responsive on slower machines.
+            start_wall = time.perf_counter()
+            next_frame = start_wall
             while not self.stop_event.is_set():
-                self._apply_commands(simulation, model, data)
+                self._apply_commands(simulation, model, data, camera)
                 if self.stop_event.is_set():
                     break
-                if simulation is not None:
-                    simulation._step()
-                    if simulation._is_fallen():
-                        simulation.reset()
-                else:
-                    mujoco.mj_step(model, data)
-
                 now = time.perf_counter()
+                target_sim_time = now - start_wall
+                # Catch up to wall clock, capped to prevent a long render or
+                # policy inference pause from creating an unbounded backlog.
+                steps = 0
+                while data.time < target_sim_time and steps < 24:
+                    if simulation is not None:
+                        simulation._step()
+                        if simulation._is_fallen():
+                            simulation.reset()
+                    else:
+                        mujoco.mj_step(model, data)
+                    steps += 1
                 if now >= next_frame:
                     renderer.update_scene(data, camera=camera)
                     rgb = renderer.render()
@@ -125,18 +155,67 @@ class MuJoCoRenderWorker(QThread):
                     ).copy()
                     self.frame_ready.emit(image)
                     next_frame = now + 1.0 / 30.0
-
-                next_step += timestep
-                delay = next_step - time.perf_counter()
-                if delay > 0:
-                    time.sleep(min(delay, 0.02))
-                elif delay < -0.2:
-                    next_step = time.perf_counter()
+                # If one physics step overshot the wall clock, yield until the
+                # next tick instead of spinning a CPU core.
+                delay = min(0.004, max(0.0, data.time - target_sim_time))
+                if delay:
+                    time.sleep(delay)
         except Exception as exc:  # pragma: no cover - backend/display dependent
             self.error_occurred.emit(f"MuJoCo 内嵌仿真启动失败：{exc}")
         finally:
             if renderer is not None:
                 renderer.close()
+
+
+class MuJoCoCanvas(QLabel):
+    """Qt canvas forwarding camera gestures and robot keys to the page."""
+
+    camera_command = pyqtSignal(str, object)
+    key_command = pyqtSignal(int, bool)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._last_pos: QPoint | None = None
+        self._button = Qt.NoButton
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
+        self.setAttribute(Qt.WA_NoSystemBackground, True)
+
+    def mousePressEvent(self, event) -> None:
+        self.setFocus(Qt.MouseFocusReason)
+        self._last_pos = event.pos()
+        self._button = event.button()
+        event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._last_pos = None
+        self._button = Qt.NoButton
+        event.accept()
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._last_pos is not None and self._button in (Qt.LeftButton, Qt.RightButton):
+            delta = event.pos() - self._last_pos
+            self._last_pos = event.pos()
+            operation = "rotate" if self._button == Qt.LeftButton else "pan"
+            self.camera_command.emit(operation, (delta.x(), delta.y()))
+        event.accept()
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        # One wheel notch is 120 degrees.  Positive delta zooms in.
+        steps = event.angleDelta().y() / 120.0
+        self.camera_command.emit("zoom", steps)
+        event.accept()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not event.isAutoRepeat():
+            self.key_command.emit(int(event.key()), True)
+        event.accept()
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        if not event.isAutoRepeat():
+            self.key_command.emit(int(event.key()), False)
+        event.accept()
 
 
 class EmbeddedSimulationPage(QWidget):
@@ -149,6 +228,9 @@ class EmbeddedSimulationPage(QWidget):
         self.worker: MuJoCoRenderWorker | None = None
         self.last_image: QImage | None = None
         self.control_buttons: list[QPushButton] = []
+        self.pressed_keys: set[int] = set()
+        self.speed_slider: QSlider | None = None
+        self.speed_value_label: QLabel | None = None
         self.build_ui()
 
     def build_ui(self) -> None:
@@ -191,6 +273,19 @@ class EmbeddedSimulationPage(QWidget):
         self.add_button(gear, "高速", None, None, lambda: self.send("gear", gear=3))
         left.addWidget(gear_box)
 
+        speed_box = QGroupBox("全向速度（m/s）")
+        speed_layout = QHBoxLayout(speed_box)
+        self.speed_slider = QSlider(Qt.Horizontal)
+        self.speed_slider.setRange(0, 200)
+        self.speed_slider.setValue(100)
+        self.speed_slider.setToolTip("WASD 的线速度，0–2 m/s")
+        self.speed_slider.valueChanged.connect(self.speed_changed)
+        self.speed_value_label = QLabel("1.00")
+        self.speed_value_label.setMinimumWidth(42)
+        speed_layout.addWidget(self.speed_slider, 1)
+        speed_layout.addWidget(self.speed_value_label)
+        left.addWidget(speed_box)
+
         bottom = QHBoxLayout()
         self.add_button(bottom, "重置", None, None, lambda: self.send("reset"))
         left.addLayout(bottom)
@@ -200,10 +295,13 @@ class EmbeddedSimulationPage(QWidget):
         left_widget.setFixedWidth(260)
         content.addWidget(left_widget)
 
-        self.render_label = QLabel("MuJoCo 渲染画面")
+        self.render_label = MuJoCoCanvas()
+        self.render_label.setText("MuJoCo 渲染画面")
         self.render_label.setAlignment(Qt.AlignCenter)
-        self.render_label.setMinimumSize(640, 480)
+        self.render_label.setMinimumSize(854, 480)
         self.render_label.setStyleSheet("background: #101820; color: #dcecff;")
+        self.render_label.camera_command.connect(self.camera_command)
+        self.render_label.key_command.connect(self.key_command)
         content.addWidget(self.render_label, 1)
         root.addLayout(content, 1)
         self.setStyleSheet("""
@@ -231,7 +329,7 @@ class EmbeddedSimulationPage(QWidget):
               config_path: Path | None = None) -> None:
         self.stop_worker()
         self.last_image = None
-        self.render_label.clear()
+        self.render_label.setPixmap(QPixmap())
         self.render_label.setText("正在加载 MuJoCo…")
         self.status_label.setText("正在启动内嵌 MuJoCo…")
         self.worker = MuJoCoRenderWorker(xml_path, policy_path, config_path)
@@ -240,6 +338,9 @@ class EmbeddedSimulationPage(QWidget):
         self.worker.error_occurred.connect(self.show_error)
         for button in self.control_buttons:
             button.setEnabled(policy_path is not None)
+        self.pressed_keys.clear()
+        if self.speed_slider is not None:
+            self.speed_slider.setValue(100)
         if policy_path is None:
             self.status_label.setText("场景已准备，机器人控制需要勾选 M20 策略")
         self.worker.start()
@@ -257,6 +358,50 @@ class EmbeddedSimulationPage(QWidget):
     def adjust(self, axis: int, delta: float) -> None:
         self.send("adjust", axis=axis, delta=delta)
 
+    def speed_changed(self, value: int) -> None:
+        speed = value / 100.0
+        if self.speed_value_label is not None:
+            self.speed_value_label.setText(f"{speed:.2f}")
+        self.send("speed", speed=speed)
+        self.update_motion_command()
+
+    def update_motion_command(self) -> None:
+        if self.speed_slider is None:
+            return
+        speed = self.speed_slider.value() / 100.0
+        vx = vy = yaw = 0.0
+        # W/S forward/back, A/D lateral, Q/E turn left/right.
+        if Qt.Key_W in self.pressed_keys:
+            vx += speed
+        if Qt.Key_S in self.pressed_keys:
+            vx -= speed
+        if Qt.Key_A in self.pressed_keys:
+            vy += speed
+        if Qt.Key_D in self.pressed_keys:
+            vy -= speed
+        if Qt.Key_Q in self.pressed_keys:
+            yaw += 1.0
+        if Qt.Key_E in self.pressed_keys:
+            yaw -= 1.0
+        self.send("motion", vx=vx, vy=vy, yaw=yaw)
+
+    def key_command(self, key: int, pressed: bool) -> None:
+        if key not in (Qt.Key_W, Qt.Key_A, Qt.Key_S, Qt.Key_D, Qt.Key_Q, Qt.Key_E):
+            return
+        if pressed:
+            self.pressed_keys.add(key)
+        else:
+            self.pressed_keys.discard(key)
+        self.update_motion_command()
+
+    def camera_command(self, operation: str, values: object) -> None:
+        if operation == "zoom":
+            steps = float(values)
+            self.send("zoom", factor=0.85 ** steps)
+        elif operation in ("rotate", "pan"):
+            dx, dy = values  # type: ignore[misc]
+            self.send(operation, dx=float(dx), dy=float(dy))
+
     def show_frame(self, image: QImage) -> None:
         self.last_image = image
         self.update_render_pixmap()
@@ -265,9 +410,15 @@ class EmbeddedSimulationPage(QWidget):
         if self.last_image is None:
             return
         pixmap = QPixmap.fromImage(self.last_image)
-        self.render_label.setPixmap(pixmap.scaled(
-            self.render_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-        ))
+        target = self.render_label.size()
+        if pixmap.size() == target:
+            self.render_label.setPixmap(pixmap)
+        else:
+            # Fast scaling keeps the GUI thread below the 30 FPS frame budget;
+            # the source image is already rendered at 720p.
+            self.render_label.setPixmap(pixmap.scaled(
+                target, Qt.KeepAspectRatio, Qt.FastTransformation
+            ))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

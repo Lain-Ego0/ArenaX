@@ -66,8 +66,15 @@ class OnnxPolicy:
                 ) from (exc if site_package_dirs else first_error)
 
         self.path = policy_path
+        # A single worker avoids ONNX Runtime oversubscribing the render/
+        # simulation thread (the default multi-thread pool is a common source
+        # of visible stutter for small locomotion policies).
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         self.session = ort.InferenceSession(
-            str(policy_path), providers=["CPUExecutionProvider"]
+            str(policy_path), sess_options=options, providers=["CPUExecutionProvider"]
         )
         inputs = self.session.get_inputs()
         outputs = self.session.get_outputs()
@@ -174,12 +181,36 @@ class KeyboardCommand:
     def __init__(self, config: dict[str, Any]) -> None:
         self._lock = Lock()
         self.command = np.asarray(config.get("cmd_init", [0.0, 0.0, 0.0]), dtype=np.float32)
-        self.max_command = np.asarray(config.get("max_cmd", [0.5, 1.0, 2.0]), dtype=np.float32)
+        # The UI exposes one omnidirectional speed slider (0..2 m/s).  Keep
+        # the old per-axis limits as a fallback for callers using the
+        # headless runtime, but use the selected speed for both vx and vy.
+        self.max_command = np.asarray(config.get("max_cmd", [1.0, 1.0, 2.0]), dtype=np.float32)
+        self.speed = float(np.clip(config.get("default_speed", 1.0), 0.0, 2.0))
         self.gear_speeds = {int(k): float(v) for k, v in config.get(
             "gear_speeds", {1: 0.5, 2: 1.0, 3: 1.5}
         ).items()}
         self.gear = int(config.get("default_gear", 1))
         self._set_gear(self.gear)
+
+    def set_speed(self, speed: float) -> None:
+        """Set the omnidirectional linear speed in metres per second."""
+
+        with self._lock:
+            self.speed = float(np.clip(speed, 0.0, 2.0))
+            self.max_command[0] = self.speed
+            self.max_command[1] = self.speed
+            self._clamp()
+
+    def speed_value(self) -> float:
+        with self._lock:
+            return float(self.speed)
+
+    def set_motion(self, vx: float, vy: float, yaw: float = 0.0) -> None:
+        """Set a complete velocity command, clamped to the slider limits."""
+
+        with self._lock:
+            self.command[:] = (vx, vy, yaw)
+            self._clamp()
 
     def _clamp(self) -> None:
         self.command[0] = np.clip(self.command[0], -self.max_command[0], self.max_command[0])
@@ -188,7 +219,12 @@ class KeyboardCommand:
 
     def _set_gear(self, gear: int) -> None:
         self.gear = int(np.clip(gear, 1, 3))
-        self.max_command[0] = self.gear_speeds.get(self.gear, self.max_command[0])
+        # Gear remains available to older clients.  Explicit speed-slider
+        # updates always take precedence over the gear defaults.
+        if self.speed <= 0.0:
+            self.speed = self.gear_speeds.get(self.gear, self.max_command[0])
+        self.max_command[0] = self.speed
+        self.max_command[1] = self.speed
         self._clamp()
 
     def stop(self) -> None:
@@ -218,11 +254,23 @@ class KeyboardCommand:
         import glfw
 
         changed = True
-        # MuJoCo's viewer owns W/A/S/D/Q/E. Its Python key_callback is
-        # notification-only, so arrows, keypad keys, and F8-F12 are used for
-        # driving without changing the camera or visualization.
+        # In the embedded Qt canvas W/A/S/D/Q/E are latched by the page.  The
+        # native MuJoCo callback remains one-shot, so arrows/keypad/F-keys are
+        # retained as compatibility shortcuts there.
         with self._lock:
-            if key in (glfw.KEY_UP, glfw.KEY_KP_8, glfw.KEY_6):
+            if key == glfw.KEY_W:
+                self.command[0] = self.speed
+            elif key == glfw.KEY_S:
+                self.command[0] = -self.speed
+            elif key == glfw.KEY_A:
+                self.command[1] = self.speed
+            elif key == glfw.KEY_D:
+                self.command[1] = -self.speed
+            elif key == glfw.KEY_Q:
+                self.command[2] = abs(self.max_command[2]) * 0.5
+            elif key == glfw.KEY_E:
+                self.command[2] = -abs(self.max_command[2]) * 0.5
+            elif key in (glfw.KEY_UP, glfw.KEY_KP_8, glfw.KEY_6):
                 self.command[0] += 0.1
             elif key in (glfw.KEY_DOWN, glfw.KEY_KP_2, glfw.KEY_7):
                 self.command[0] -= 0.1

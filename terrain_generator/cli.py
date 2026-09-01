@@ -32,6 +32,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--preset", choices=("playground",), help="use a ready-made robot test arena")
     parser.add_argument("--scene", type=Path, help="load an arena scene JSON file")
     parser.add_argument("--xml", type=Path, help="run or view an existing MuJoCo XML file directly")
+    parser.add_argument("--terrain-library", type=Path,
+                        help="optional directory of standalone terrain XML files")
+    parser.add_argument("--terrain-name",
+                        help="XML stem/name to load from --terrain-library (default: first)")
     parser.add_argument("--base-scene", type=Path, help="append the arena to an existing robot MuJoCo scene")
     parser.add_argument("--no-test-ball", action="store_true", help="do not add the demo free ball")
     parser.add_argument("--edit", action="store_true", help="open the graphical arena editor")
@@ -53,6 +57,12 @@ def main(argv: list[str] | None = None) -> int:
 
         launch_editor(args.output, args.base_scene)
         return 0
+
+    if args.terrain_library:
+        if args.xml or args.scene or args.preset or args.base_scene:
+            raise SystemExit("--terrain-library cannot be combined with --xml, --scene, --preset, or --base-scene")
+        from .terrain_library import TerrainLibrary
+        args.xml = TerrainLibrary(args.terrain_library).resolve(args.terrain_name)
 
     if args.policy and args.robot == "m20" and not args.xml and not args.base_scene:
         bundled_scene = Path(__file__).resolve().parent.parent / "assets" / "m20" / "mjcf" / "scene.xml"
