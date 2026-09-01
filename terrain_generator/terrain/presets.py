@@ -50,7 +50,7 @@ def playground_scene(seed: int = 7) -> ArenaScene:
             "gravel_count": 18, "gravel_size": 0.035,
         }),
         TerrainElement("high_wall", x=8.8, y=0.0, name="high_wall", params={
-            "length": 2.4, "thickness": 0.22, "height": 1.2,
+            "length": 2.4, "thickness": 0.22, "height": 0.3,
         }),
     ]
     return ArenaScene(name="playground", terrain=terrain, elements=elements)

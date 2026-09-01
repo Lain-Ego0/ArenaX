@@ -437,7 +437,7 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         spacing_x = float(p.get("spacing_x", p.get("spacing", 0.45)))
         spacing_y = float(p.get("spacing_y", p.get("spacing", 0.6)))
         side = float(p.get("size", p.get("radius", 0.15) * 2))
-        height = float(p.get("height", 0.3))
+        height = float(p.get("height", 1.2))
         index = 0
         for row in range(rows):
             row_offset = spacing_x / 2 if row % 2 else 0.0
@@ -563,7 +563,7 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
     elif element.kind == "high_wall":
         length = float(p.get("length", 2.4))
         thickness = float(p.get("thickness", 0.22))
-        height = float(p.get("height", 1.2))
+        height = float(p.get("height", 0.3))
         _add_box(worldbody, prefix, element, 0.0, 0.0, height / 2,
                  (length / 2, thickness / 2, height / 2), rgba)
 

@@ -50,7 +50,7 @@ DEFAULT_PARAMS = {
     "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "surface_height": 0.06,
                 "roughness": 0.018, "surface_grid": 13, "potholes": 7,
                 "gravel_count": 18, "gravel_size": 0.035, "border": 0.12},
-    "high_wall": {"length": 2.4, "thickness": 0.22, "height": 1.2},
+    "high_wall": {"length": 2.4, "thickness": 0.22, "height": 0.3},
 }
 
 PARAM_SCHEMA = {
@@ -79,6 +79,7 @@ COLORS = {
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BUNDLED_M20_SCENE = Path("assets/m20/mjcf/scene.xml")
 BUNDLED_M20_POLICY = Path("policies/m20/policy.onnx")
+DEFAULT_TERRAIN_LIBRARY = PROJECT_ROOT / "terrain_library"
 
 
 def rotate_xy(x: float, y: float, yaw: float) -> tuple[float, float]:
@@ -266,6 +267,20 @@ class PreviewWidget(QWidget):
         for y in range(-int(config.width / 2), int(config.width / 2) + 1):
             a, b = self.world_to_view(-config.length / 2, y), self.world_to_view(config.length / 2, y)
             painter.drawLine(a, b)
+        # The bundled M20 free joint starts at the arena origin.  Mark a
+        # small keep-clear footprint so obstacles are not accidentally placed
+        # on top of the robot before the simulation page is opened.
+        spawn = self.world_to_view(0.0, 0.0)
+        scale = min(self.width() / config.length, self.height() / config.width)
+        footprint = max(10.0, 0.42 * scale)
+        painter.setPen(QPen(QColor("#d1493f"), 2, Qt.DashLine))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(spawn, footprint, footprint)
+        painter.drawLine(spawn + QPointF(-footprint, 0), spawn + QPointF(footprint, 0))
+        painter.drawLine(spawn + QPointF(0, -footprint), spawn + QPointF(0, footprint))
+        painter.setPen(QPen(QColor("#b33a32"), 1))
+        painter.setFont(QFont("Arial", 8, QFont.Bold))
+        painter.drawText(spawn + QPointF(6, -6), "M20 初始点 (0,0)")
         for index, element in enumerate(self.arena.elements):
             self.draw_element(painter, element, index == self.selected_index)
             center = self.world_to_view(element.x, element.y)
@@ -405,7 +420,7 @@ class QtArenaEditor(QMainWindow):
         library_box = QGroupBox("地形库（可选 XML 目录）")
         library_form = QFormLayout(library_box)
         library_row = QHBoxLayout()
-        self.library_edit = QLineEdit()
+        self.library_edit = QLineEdit(str(DEFAULT_TERRAIN_LIBRARY))
         self.library_edit.setPlaceholderText("放入独立 .xml 地形文件的文件夹")
         browse_library = QPushButton("浏览")
         browse_library.clicked.connect(self.browse_library)
@@ -425,6 +440,16 @@ class QtArenaEditor(QMainWindow):
         self.robot_checkbox = QCheckBox("添加 M20 机器人并运行策略")
         self.robot_checkbox.setToolTip("勾选后使用仓库内置 M20 和 policies/m20/policy.onnx")
         right_layout.addWidget(self.robot_checkbox)
+        spawn_hint = QLabel(
+            "⚠ M20 默认初始位置：场地中心 (x=0, y=0)，基座高度约 1.0 m。\n"
+            "请避开红色标记区域放置障碍；使用自定义机器人 XML 时请以其 freejoint 位姿为准。"
+        )
+        spawn_hint.setWordWrap(True)
+        spawn_hint.setStyleSheet(
+            "color: #a53a32; background: #fff1ef; border: 1px solid #efb7b0; "
+            "border-radius: 5px; padding: 7px;"
+        )
+        right_layout.addWidget(spawn_hint)
         self.view_button = QPushButton("导出并在 MuJoCo 查看")
         self.view_button.clicked.connect(self.export_and_view)
         right_layout.addWidget(self.view_button)
@@ -537,6 +562,10 @@ class QtArenaEditor(QMainWindow):
         self.scene.elements.append(element)
         self.selected_index = index
         self.refresh(select=index)
+        if x * x + y * y < 0.8 * 0.8:
+            self.statusBar().showMessage(
+                "警告：障碍位于 M20 初始点附近，运行策略前请确认不会与机器人干涉"
+            )
 
     def selected_indices(self) -> list[int]:
         return sorted({self.element_list.row(item) for item in self.element_list.selectedItems()})

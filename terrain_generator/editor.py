@@ -37,7 +37,7 @@ DEFAULT_PARAMS = {
     "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "surface_height": 0.06,
                 "roughness": 0.018, "surface_grid": 13, "potholes": 7,
                 "gravel_count": 18, "gravel_size": 0.035, "border": 0.12},
-    "high_wall": {"length": 2.4, "thickness": 0.22, "height": 1.2},
+    "high_wall": {"length": 2.4, "thickness": 0.22, "height": 0.3},
 }
 
 

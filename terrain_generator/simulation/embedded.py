@@ -13,7 +13,7 @@ import numpy as np
 from PyQt5.QtCore import QPoint, QThread, Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QKeyEvent, QWheelEvent
 from PyQt5.QtWidgets import (
-    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget,
+    QGroupBox, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget,
 )
 
 from .m20 import M20Simulation
@@ -275,27 +275,10 @@ class EmbeddedSimulationPage(QWidget):
         self.status_label.setWordWrap(True)
         left.addWidget(self.status_label)
 
-        motion_box = QGroupBox("机器人控制")
-        motion = QGridLayout(motion_box)
-        self.add_button(motion, "↑\n前进", 0, 1, lambda: self.adjust(0, 0.1))
-        self.add_button(motion, "←\n左移", 1, 0, lambda: self.adjust(1, 0.2))
-        self.add_button(motion, "停止", 1, 1, lambda: self.send("stop"))
-        self.add_button(motion, "→\n右移", 1, 2, lambda: self.adjust(1, -0.2))
-        self.add_button(motion, "↓\n后退", 2, 1, lambda: self.adjust(0, -0.1))
-        left.addWidget(motion_box)
-
-        turn_box = QGroupBox("转向")
-        turn = QHBoxLayout(turn_box)
-        self.add_button(turn, "↶ 左转", None, None, lambda: self.adjust(2, 0.2))
-        self.add_button(turn, "↷ 右转", None, None, lambda: self.adjust(2, -0.2))
-        left.addWidget(turn_box)
-
-        gear_box = QGroupBox("速度档位")
-        gear = QHBoxLayout(gear_box)
-        self.add_button(gear, "低速", None, None, lambda: self.send("gear", gear=1))
-        self.add_button(gear, "中速", None, None, lambda: self.send("gear", gear=2))
-        self.add_button(gear, "高速", None, None, lambda: self.send("gear", gear=3))
-        left.addWidget(gear_box)
+        key_hint = QLabel("点击仿真画面后：\nW/S 前后 · A/D 左右 · Q/E 转向")
+        key_hint.setWordWrap(True)
+        key_hint.setStyleSheet("color: #476b8c; padding: 8px 2px;")
+        left.addWidget(key_hint)
 
         speed_box = QGroupBox("全向速度（m/s）")
         speed_layout = QHBoxLayout(speed_box)
@@ -310,13 +293,16 @@ class EmbeddedSimulationPage(QWidget):
         speed_layout.addWidget(self.speed_value_label)
         left.addWidget(speed_box)
 
-        bottom = QHBoxLayout()
-        self.add_button(bottom, "重置", None, None, lambda: self.send("reset"))
-        left.addLayout(bottom)
+        reset_button = QPushButton("重置")
+        reset_button.setMinimumHeight(52)
+        reset_button.setEnabled(False)
+        reset_button.clicked.connect(lambda: self.send("reset"))
+        self.control_buttons.append(reset_button)
+        left.addWidget(reset_button)
         left.addStretch(1)
         left_widget = QWidget()
         left_widget.setLayout(left)
-        left_widget.setFixedWidth(260)
+        left_widget.setFixedWidth(230)
         content.addWidget(left_widget)
 
         self.render_label = MuJoCoCanvas()
@@ -336,18 +322,6 @@ class EmbeddedSimulationPage(QWidget):
             QPushButton:hover { background: #155d9f; }
             QPushButton:disabled { background: #aab8c4; }
         """)
-
-    def add_button(self, layout: Any, text: str, row: int | None, column: int | None,
-                   callback) -> None:
-        button = QPushButton(text)
-        button.setMinimumHeight(52)
-        button.setEnabled(False)
-        button.clicked.connect(callback)
-        self.control_buttons.append(button)
-        if row is None:
-            layout.addWidget(button)
-        else:
-            layout.addWidget(button, row, column)
 
     def start(self, xml_path: Path, policy_path: Path | None = None,
               config_path: Path | None = None) -> None:
@@ -378,9 +352,6 @@ class EmbeddedSimulationPage(QWidget):
     def send(self, operation: str, **values: Any) -> None:
         if self.worker is not None:
             self.worker.send(operation, **values)
-
-    def adjust(self, axis: int, delta: float) -> None:
-        self.send("adjust", axis=axis, delta=delta)
 
     def speed_changed(self, value: int) -> None:
         speed = value / 100.0
@@ -440,13 +411,13 @@ class EmbeddedSimulationPage(QWidget):
         if pixmap.size() == target:
             self.render_label.setPixmap(pixmap)
         else:
-            # Fill the complete canvas instead of leaving black letterbox
-            # bands when the Qt panel and 16:9 source have different ratios.
-            # A direct fast scale also keeps objects at the view edges visible
-            # (cropping would hide them when the camera is zoomed out).
-            self.render_label.setPixmap(pixmap.scaled(
-                target, Qt.IgnoreAspectRatio, Qt.FastTransformation
-            ))
+            # Preserve the 16:9 camera geometry.  Scale proportionally and
+            # crop only the excess edges so the canvas is filled without
+            # stretching meshes or leaving letterbox bars.
+            scaled = pixmap.scaled(target, Qt.KeepAspectRatioByExpanding, Qt.FastTransformation)
+            left = max(0, (scaled.width() - target.width()) // 2)
+            top = max(0, (scaled.height() - target.height()) // 2)
+            self.render_label.setPixmap(scaled.copy(left, top, target.width(), target.height()))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
