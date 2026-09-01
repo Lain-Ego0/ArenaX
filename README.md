@@ -70,6 +70,9 @@ python3 -m terrain_generator.cli \
 
 一键生成包含全部常用障碍的标准测试场地：
 
+标准预设场地尺寸为约 `28.3 × 17.0 m`（面积约为旧版本的 2 倍），障碍已重新分区
+排布，减少相互遮挡和机器人行走干涉。
+
 ```bash
 python3 -m terrain_generator.cli \
   --preset playground \
