@@ -239,7 +239,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     platform_plugins = Path(PyQt5.__file__).resolve().parent / "Qt5" / "plugins" / "platforms"
-    os.environ.setdefault("QT_QPA_PLATFORM_PLUGIN_PATH", str(platform_plugins))
+    # The editor may have started with the system PyQt5 and passed its
+    # plugin path to this .venv child. Always prefer the child interpreter's
+    # matching Qt plugins, otherwise xcb/Wayland loading can fail.
+    os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(platform_plugins)
     app = QApplication.instance() or QApplication(sys.argv)
     window = M20ControlPanel(
         args.xml.resolve(), args.policy.resolve(),

@@ -389,13 +389,12 @@ class QtArenaEditor(QMainWindow):
         scene_form.addRow("输出目录", self.output_edit)
         scene_form.addRow("自定义机器人 XML（可选）", self.base_scene_edit)
         right_layout.addWidget(scene_box)
+        self.robot_checkbox = QCheckBox("添加 M20 机器人并运行策略")
+        self.robot_checkbox.setToolTip("勾选后使用仓库内置 M20 和 policies/m20/policy.onnx")
+        right_layout.addWidget(self.robot_checkbox)
         self.view_button = QPushButton("导出并在 MuJoCo 查看")
         self.view_button.clicked.connect(self.export_and_view)
         right_layout.addWidget(self.view_button)
-        self.robot_button = QPushButton("导出并添加机器人")
-        self.robot_button.setToolTip("导出地图后，在 MuJoCo 中加入 M20 并运行策略")
-        self.robot_button.clicked.connect(self.export_and_robot)
-        right_layout.addWidget(self.robot_button)
         right_layout.addStretch(1)
         splitter.addWidget(right)
         splitter.setSizes([250, 850, 330])
@@ -596,6 +595,9 @@ class QtArenaEditor(QMainWindow):
             return None
 
     def export_and_view(self) -> None:
+        if self.robot_checkbox.isChecked():
+            self.export_and_robot()
+            return
         paths = self.export()
         if not paths:
             return
@@ -623,7 +625,7 @@ class QtArenaEditor(QMainWindow):
             "--xml", self.project_relative(paths["xml"]),
             "--policy", str(BUNDLED_M20_POLICY),
         ]
-        self.launch_mujoco(command, paths["xml"])
+        self.launch_mujoco(command, paths["xml"], log_name="control_panel.log")
         self.statusBar().showMessage(f"已导出并在 MuJoCo 查看 M20 策略：{paths['xml']}")
 
     @staticmethod
@@ -636,10 +638,11 @@ class QtArenaEditor(QMainWindow):
     def project_relative(path: Path) -> str:
         return os.path.relpath(path, PROJECT_ROOT)
 
-    def launch_mujoco(self, command: list[str], xml_path: Path) -> None:
+    def launch_mujoco(self, command: list[str], xml_path: Path,
+                      log_name: str = "mujoco.log") -> None:
         """Launch MuJoCo independently and retain a per-export diagnostic log."""
 
-        log_path = xml_path.with_name("mujoco.log")
+        log_path = xml_path.with_name(log_name)
         try:
             with log_path.open("w", encoding="utf-8") as log_file:
                 process = subprocess.Popen(

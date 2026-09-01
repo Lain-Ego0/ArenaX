@@ -101,12 +101,14 @@ pave \
   --output generated/my_arena
 ```
 
-编辑器右侧提供两个导出操作：
+编辑器右侧提供一个导出操作和一个机器人选项：
 
-- **导出并在 MuJoCo 查看**：只加载刚导出的场景进行可视化。
-- **导出并添加机器人（MuJoCo 查看）**：在 MuJoCo 中自动加入仓库内置 M20，加载 `policies/m20/policy.onnx`，同时打开 PyQt 控制面板和策略仿真窗口。
+- **添加 M20 机器人并运行策略**：勾选后，导出时自动使用仓库内置 M20 和 `policies/m20/policy.onnx`。
+- **导出并在 MuJoCo 查看**：未勾选机器人选项时只加载刚导出的场景；勾选后同时打开 PyQt 控制面板和 M20 策略仿真窗口。控制面板与 MuJoCo viewer 分进程运行，使用面板按钮控制机器人，不会触发 viewer 快捷键。
 
 每次点击都会在输出目录下新建本地时间命名的子目录，例如 `generated/my_arena/output_20260901_153045/`；如果同一秒重复导出，会自动追加序号，不会覆盖已有结果。
+
+机器人模式的 `mujoco.log` 保存 MuJoCo 子进程日志，`control_panel.log` 保存控制面板进程日志。
 
 ## ONNX 策略与机器人验证
 
