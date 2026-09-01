@@ -4,22 +4,22 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import PyQt5
-from PyQt5.QtCore import QPointF, QRectF, QTimer, Qt
+from PyQt5.QtCore import QPointF, QRectF, Qt
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QBrush, QPolygonF
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
-    QMessageBox, QPushButton, QSpinBox, QSplitter, QStatusBar, QVBoxLayout,
+    QMessageBox, QPushButton, QSpinBox, QSplitter, QStackedWidget, QStatusBar, QVBoxLayout,
     QWidget,
 )
 
 from .models import ArenaScene, TerrainConfig, TerrainElement, SUPPORTED_ELEMENT_TYPES
+from .embedded_mujoco import EmbeddedSimulationPage
 from .presets import playground_scene
 from .scene import export_scene, load_scene
 
@@ -72,7 +72,6 @@ COLORS = {
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BUNDLED_M20_SCENE = Path("assets/m20/mjcf/scene.xml")
 BUNDLED_M20_POLICY = Path("policies/m20/policy.onnx")
-PROJECT_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
 
 
 def rotate_xy(x: float, y: float, yaw: float) -> tuple[float, float]:
@@ -310,16 +309,23 @@ class QtArenaEditor(QMainWindow):
             base_scene=str(base_scene) if base_scene else None,
         )
         self.selected_index: int | None = None
+        self.latest_xml: Path | None = None
+        self.latest_policy: Path | None = None
         self.setWindowTitle("MuJoCo 机器人 Play 测试场地编辑器")
         self.resize(1440, 820)
         self.build_ui()
+        self.simulation_page = EmbeddedSimulationPage(self)
+        self.simulation_page.back_requested.connect(self.show_editor_page)
+        self.page_stack.addWidget(self.simulation_page)
         self.apply_style()
         self.refresh()
 
     def build_ui(self) -> None:
-        central = QWidget()
-        self.setCentralWidget(central)
-        main_layout = QHBoxLayout(central)
+        self.page_stack = QStackedWidget()
+        self.setCentralWidget(self.page_stack)
+        editor_page = QWidget()
+        self.page_stack.addWidget(editor_page)
+        main_layout = QHBoxLayout(editor_page)
         splitter = QSplitter(Qt.Horizontal)
         main_layout.addWidget(splitter)
 
@@ -395,6 +401,12 @@ class QtArenaEditor(QMainWindow):
         self.view_button = QPushButton("导出并在 MuJoCo 查看")
         self.view_button.clicked.connect(self.export_and_view)
         right_layout.addWidget(self.view_button)
+        self.next_button = QPushButton("→")
+        self.next_button.setToolTip("进入 MuJoCo 仿真页面")
+        self.next_button.setMinimumHeight(44)
+        self.next_button.setVisible(False)
+        self.next_button.clicked.connect(self.open_simulation_page)
+        right_layout.addWidget(self.next_button)
         right_layout.addStretch(1)
         splitter.addWidget(right)
         splitter.setSizes([250, 850, 330])
@@ -595,79 +607,36 @@ class QtArenaEditor(QMainWindow):
             return None
 
     def export_and_view(self) -> None:
-        if self.robot_checkbox.isChecked():
-            self.export_and_robot()
-            return
-        paths = self.export()
-        if not paths:
-            return
-        command = [
-            self.runtime_python(), "-m", "terrain_generator.cli",
-            "--xml", self.project_relative(paths["xml"]), "--view",
-        ]
-        self.launch_mujoco(command, paths["xml"])
-        self.statusBar().showMessage(f"已导出并在 MuJoCo 查看：{paths['xml']}")
+        robot_enabled = self.robot_checkbox.isChecked()
+        bundled_scene = PROJECT_ROOT / BUNDLED_M20_SCENE if robot_enabled else None
+        if robot_enabled:
+            bundled_policy = PROJECT_ROOT / BUNDLED_M20_POLICY
+            if not bundled_scene.is_file() or not bundled_policy.is_file():
+                QMessageBox.critical(
+                    self, "M20 资源缺失",
+                    f"找不到内置 M20 场景或策略：\n{bundled_scene}\n{bundled_policy}",
+                )
+                return
 
-    def export_and_robot(self) -> None:
-        bundled_scene = PROJECT_ROOT / BUNDLED_M20_SCENE
-        bundled_policy = PROJECT_ROOT / BUNDLED_M20_POLICY
-        if not bundled_scene.is_file() or not bundled_policy.is_file():
-            QMessageBox.critical(
-                self, "M20 资源缺失",
-                f"找不到内置 M20 场景或策略：\n{bundled_scene}\n{bundled_policy}",
-            )
-            return
         paths = self.export(base_scene_override=bundled_scene)
         if not paths:
             return
-        command = [
-            self.runtime_python(), "-m", "terrain_generator.control_panel",
-            "--xml", self.project_relative(paths["xml"]),
-            "--policy", str(BUNDLED_M20_POLICY),
-        ]
-        self.launch_mujoco(command, paths["xml"], log_name="control_panel.log")
-        self.statusBar().showMessage(f"已导出并在 MuJoCo 查看 M20 策略：{paths['xml']}")
+        self.latest_xml = paths["xml"]
+        self.latest_policy = PROJECT_ROOT / BUNDLED_M20_POLICY if robot_enabled else None
+        self.next_button.setVisible(True)
+        self.next_button.setEnabled(True)
+        mode = "M20 策略场景" if robot_enabled else "普通场景"
+        self.statusBar().showMessage(f"已导出 {mode}：点击右侧 → 进入内嵌 MuJoCo 页面")
 
-    @staticmethod
-    def runtime_python() -> str:
-        """Use the repository virtualenv for child processes when available."""
-
-        return str(PROJECT_PYTHON) if PROJECT_PYTHON.is_file() else sys.executable
-
-    @staticmethod
-    def project_relative(path: Path) -> str:
-        return os.path.relpath(path, PROJECT_ROOT)
-
-    def launch_mujoco(self, command: list[str], xml_path: Path,
-                      log_name: str = "mujoco.log") -> None:
-        """Launch MuJoCo independently and retain a per-export diagnostic log."""
-
-        log_path = xml_path.with_name(log_name)
-        try:
-            with log_path.open("w", encoding="utf-8") as log_file:
-                process = subprocess.Popen(
-                    command,
-                    cwd=str(PROJECT_ROOT),
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-        except OSError as exc:
-            QMessageBox.critical(self, "MuJoCo 启动失败", str(exc))
+    def open_simulation_page(self) -> None:
+        if self.latest_xml is None:
             return
-        QTimer.singleShot(1200, lambda: self.check_mujoco_process(process, log_path))
+        config = PROJECT_ROOT / "configs" / "m20.yaml" if self.latest_policy else None
+        self.simulation_page.start(self.latest_xml, self.latest_policy, config)
+        self.page_stack.setCurrentWidget(self.simulation_page)
 
-    def check_mujoco_process(self, process: subprocess.Popen, log_path: Path) -> None:
-        if process.poll() is None:
-            return
-        try:
-            details = log_path.read_text(encoding="utf-8")[-4000:]
-        except OSError:
-            details = "无法读取 mujoco.log"
-        QMessageBox.critical(
-            self, "MuJoCo 未能打开",
-            f"进程已退出（code={process.returncode}）。\n\n日志：{log_path}\n\n{details}",
-        )
+    def show_editor_page(self) -> None:
+        self.page_stack.setCurrentIndex(0)
 
 
 def launch_qt_editor(output_dir: str | Path = "generated/editor",

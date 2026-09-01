@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 import time
 from threading import Lock, Thread
 from pathlib import Path
@@ -47,10 +48,22 @@ class OnnxPolicy:
             raise FileNotFoundError(f"ONNX policy not found: {policy_path}")
         try:
             import onnxruntime as ort
-        except ImportError as exc:  # pragma: no cover - depends on local setup
-            raise RuntimeError(
-                "onnxruntime is required; activate .venv and install the project dependencies"
-            ) from exc
+        except ImportError as first_error:  # pragma: no cover - depends on local setup
+            # The Qt editor can be launched by an IDE using system Python.
+            # Reuse the repository environment's packages in that case so
+            # the embedded page remains in the same PyQt application.
+            project_root = Path(__file__).resolve().parent.parent
+            site_package_dirs = sorted(project_root.glob(".venv/lib/python*/site-packages"))
+            for site_packages in reversed(site_package_dirs):
+                site_packages_text = str(site_packages)
+                if site_packages_text not in sys.path:
+                    sys.path.insert(0, site_packages_text)
+            try:
+                import onnxruntime as ort
+            except ImportError as exc:
+                raise RuntimeError(
+                    "onnxruntime is required; activate .venv and install the project dependencies"
+                ) from (exc if site_package_dirs else first_error)
 
         self.path = policy_path
         self.session = ort.InferenceSession(
