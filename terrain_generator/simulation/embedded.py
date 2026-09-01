@@ -128,6 +128,15 @@ class MuJoCoRenderWorker(QThread):
             model.vis.global_.offheight = max(int(model.vis.global_.offheight), self.height)
             renderer = mujoco.Renderer(model, height=self.height, width=self.width)
             camera = self._camera(simulation)
+            # M20's XML keeps collision geoms in group 1 and visual meshes in
+            # group 2.  Collision geometry is needed by the physics engine,
+            # but drawing it over the robot makes the model look like a blue
+            # wireframe.  Configure the renderer only (the model/data remain
+            # untouched) so contact shapes stay available for simulation.
+            render_options = mujoco.MjvOption()
+            mujoco.mjv_defaultOption(render_options)
+            render_options.geomgroup[1] = 0
+            render_options.geomgroup[2] = 1
             self.status_changed.emit(
                 "M20 ONNX 策略已启动" if simulation is not None else "MuJoCo 场景已加载"
             )
@@ -171,7 +180,7 @@ class MuJoCoRenderWorker(QThread):
                         mujoco.mj_step(model, data)
                     steps += 1
                 if now >= next_frame:
-                    renderer.update_scene(data, camera=camera)
+                    renderer.update_scene(data, camera=camera, scene_option=render_options)
                     rgb = renderer.render()
                     image = QImage(
                         rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0],

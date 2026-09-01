@@ -494,6 +494,11 @@ class M20Simulation:
         self.command.handle_key(key)
 
     def _setup_camera(self, viewer: Any) -> None:
+        # Collision proxies are kept in group 1 in the M20 model and are
+        # required for contact dynamics, but should not obscure the visual
+        # meshes in the interactive viewer.
+        viewer.opt.geomgroup[1] = 0
+        viewer.opt.geomgroup[2] = 1
         viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
         viewer.cam.trackbodyid = self.base_body_id
         viewer.cam.distance = 2.5

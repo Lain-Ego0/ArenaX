@@ -89,39 +89,5 @@
 
 
 
-<body name="box25" pos="-5  5  0.125">
-      <geom name="g25" type="box" size="0.5 0.5 0.125" rgba="0.8 0.2 0.2 1"/>
-    </body>
-
-    <!-- 箱体 2：高 0.30 m -->
-    <body name="box30" pos="-2  5  0.15">
-      <geom name="g30" type="box" size="0.5 0.5 0.15" rgba="0.2 0.8 0.2 1"/>
-    </body>
-
-    <!-- 箱体 3：高 0.35 m -->
-    <body name="box35" pos="1  5  0.175">
-      <geom name="g35" type="box" size="0.5 0.5 0.175" rgba="0.2 0.2 0.8 1"/>
-    </body>
-
-    <!-- 箱体 4：高 0.40 m -->
-    <body name="box40" pos=" 4  5  0.2">
-      <geom name="g40" type="box" size="0.5 0.5 0.2" rgba="0.8 0.8 0.2 1"/>
-    </body>
-
-    <!-- 箱体 5：高 0.45 m -->
-    <body name="box45" pos=" 7  5  0.225">
-      <geom name="g45" type="box" size="1 1 0.225" rgba="0.8 0.2 0.8 1"/>
-    </body>
-
-    <!-- 箱体 5：高 0.45 m -->
-    <body name="box50" pos=" -5  0  0.25">
-      <geom name="g50" type="box" size="1 1 0.25" rgba="1.0 0.2 0.8 1"/>
-    </body>
-
-
-        <!-- 箱体 5：高 0.45 m -->
-    <body name="box55" pos=" -10  0  0.275">
-      <geom name="g55" type="box" size="1 1 0.275" rgba="1.0 0.2 0.8 1"/>
-    </body>
   </worldbody>
 </mujoco>

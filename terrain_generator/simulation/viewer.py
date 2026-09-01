@@ -17,6 +17,10 @@ def view_xml(xml_path: str | Path) -> None:
 
     # launch_passive keeps the Python process in control of stepping and camera setup.
     with mujoco.viewer.launch_passive(model, data) as viewer:
+        # Hide the robot's collision proxies (group 1) while retaining visual
+        # meshes (group 2).  Collision geoms remain active for contacts.
+        viewer.opt.geomgroup[1] = 0
+        viewer.opt.geomgroup[2] = 1
         viewer.cam.lookat[:] = [0.0, 0.0, 0.0]
         viewer.cam.distance = max(model.stat.extent * 1.8, 4.0)
         viewer.cam.azimuth = 135.0
