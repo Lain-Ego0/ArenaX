@@ -157,6 +157,20 @@ arenax \
 调整（默认 1 m/s）。
 机器人碰撞代理仍参与物理接触，但在内嵌页和独立 viewer 中默认隐藏，仅显示机器人外观网格。
 
+## 界面与仿真示例
+
+场地编辑器提供俯视布局、障碍参数编辑和地形库加载：
+
+![ArenaX Robotics 场地编辑器](assets/Image/editor-overview.png)
+
+导出场景后，可以在内嵌 MuJoCo 页面中运行 M20 策略并观察机器人通过障碍：
+
+![M20 台阶场景仿真](assets/Image/m20-stairs-simulation.png)
+
+也可以直接加载地形库中的完整 XML 场景进行验证：
+
+![地形库场景仿真](assets/Image/terrain-library-simulation.png)
+
 ## 地形库（可选扩展）
 
 可以把独立的 MuJoCo XML 文件直接放进一个目录，在编辑器右侧“地形库”中刷新并加载，
