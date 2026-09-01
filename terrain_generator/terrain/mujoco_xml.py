@@ -287,6 +287,94 @@ def _add_wedge_mesh(asset: ET.Element, mesh_name: str, length: float,
     ET.SubElement(asset, "mesh", {"name": mesh_name, "vertex": vertices, "face": faces})
 
 
+def _add_sandpit_mesh(asset: ET.Element, worldbody: ET.Element,
+                      element: TerrainElement, prefix: str, length: float,
+                      width: float, depth: float, surface_height: float,
+                      roughness: float, grid: int, potholes: int,
+                      gravel_count: int, gravel_size: float,
+                      rgba: str) -> None:
+    """Create a solid, gently undulating sand surface with stones.
+
+    The mesh has a bottom at the terrain plane and a sampled top surface.  A
+    few deterministic Gaussian depressions model footprints/potholes while
+    sinusoidal variation avoids an unnaturally flat patch.  Deterministic
+    placement keeps exported scenes reproducible without a random seed field.
+    """
+
+    grid = max(3, min(int(grid), 64))
+    nx, ny = grid, max(3, int(round(grid * width / max(length, 1e-6))))
+    xs = np.linspace(-length / 2, length / 2, nx)
+    ys = np.linspace(-width / 2, width / 2, ny)
+    top: list[tuple[float, float, float]] = []
+    centers: list[tuple[float, float, float]] = []
+    for index in range(max(0, int(potholes))):
+        # Low-discrepancy, deterministic centers and radii.
+        fx = ((index * 0.6180339887) % 1.0) - 0.5
+        fy = ((index * 0.4142135624 + 0.17) % 1.0) - 0.5
+        radius = min(length, width) * (0.035 + 0.012 * (index % 3))
+        centers.append((fx * length, fy * width, radius))
+    for y in ys:
+        for x in xs:
+            z = surface_height + roughness * (
+                0.45 * np.sin(2.7 * x) + 0.35 * np.cos(3.1 * y)
+                + 0.20 * np.sin(4.0 * (x + y))
+            )
+            for cx, cy, radius in centers:
+                z -= roughness * 2.2 * np.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (radius * radius))
+            top.append((float(x), float(y), float(max(0.005, z))))
+
+    bottom_z = max(0.0, surface_height - max(depth, 1e-6))
+    vertices = list(top)
+    vertices.extend((x, y, bottom_z) for x, y, _z in top)
+    faces: list[int] = []
+    bottom_offset = len(top)
+    for row in range(ny - 1):
+        for col in range(nx - 1):
+            a = row * nx + col
+            b = a + 1
+            c = a + nx + 1
+            d = a + nx
+            faces.extend((a, b, c, a, c, d, bottom_offset + c, bottom_offset + b,
+                          bottom_offset + a, bottom_offset + d, bottom_offset + c, bottom_offset + a))
+    # Close the four perimeter walls (top edge paired with corresponding
+    # bottom edge).  Indices are kept explicit to avoid duplicate/invalid
+    # triangles on rectangular grids.
+    for col in range(nx - 1):
+        for a, b in (col, col + 1), ((ny - 1) * nx + col, (ny - 1) * nx + col + 1):
+            ba, bb = bottom_offset + a, bottom_offset + b
+            faces.extend((a, ba, bb, a, bb, b))
+    for row in range(ny - 1):
+        for a, b in (row * nx, (row + 1) * nx), (row * nx + nx - 1, (row + 1) * nx + nx - 1):
+            ba, bb = bottom_offset + a, bottom_offset + b
+            faces.extend((a, b, bb, a, bb, ba))
+    mesh_name = f"{prefix}_mesh"
+    ET.SubElement(asset, "mesh", {
+        "name": mesh_name,
+        "vertex": _fmt(tuple(value for point in vertices for value in point)),
+        "face": " ".join(str(value) for value in faces),
+    })
+    attrs = {"name": f"{prefix}_surface", "type": "mesh", "mesh": mesh_name,
+             "rgba": rgba, "friction": "1.2 0.35 0.02"}
+    attrs.update(_local_pose(element, 0.0, 0.0, 0.0))
+    if element.yaw:
+        attrs["euler"] = _fmt((0.0, 0.0, element.yaw))
+    ET.SubElement(worldbody, "geom", attrs)
+
+    # Add sparse rounded stones on the sampled surface.  Their positions are
+    # deterministic and use the same local-to-world transform as the mesh.
+    for index in range(max(0, int(gravel_count))):
+        fx = ((index * 0.754877666) % 1.0) - 0.5
+        fy = ((index * 0.569840291 + 0.31) % 1.0) - 0.5
+        radius = max(0.008, gravel_size * (0.7 + 0.6 * ((index * 7) % 11) / 10.0))
+        x, y = fx * max(0.0, length - 2 * radius), fy * max(0.0, width - 2 * radius)
+        z = surface_height + roughness * (0.45 * np.sin(2.7 * x) + 0.35 * np.cos(3.1 * y)) + radius * 0.65
+        attrs = {"name": f"{prefix}_gravel_{index:02d}", "type": "sphere",
+                 "size": f"{radius:.6g}", "rgba": "0.24 0.22 0.18 1",
+                 "friction": "0.9 0.2 0.1"}
+        attrs.update(_local_pose(element, x, y, max(0.0, z)))
+        ET.SubElement(worldbody, "geom", attrs)
+
+
 def _triangle_dimensions(params: dict) -> tuple[float, float, float]:
     length = float(params.get("length", 2.5))
     width = float(params.get("width", 2.0))
@@ -452,13 +540,17 @@ def _add_element(asset: ET.Element, worldbody: ET.Element, element: TerrainEleme
         length = float(p.get("length", 2.4))
         width = float(p.get("width", 2.0))
         depth = max(float(p.get("depth", 0.06)), 1e-3)
+        surface_height = max(float(p.get("surface_height", depth)), 1e-3)
+        roughness = max(float(p.get("roughness", 0.018)), 0.0)
+        grid = max(3, int(p.get("surface_grid", 13)))
+        potholes = max(0, int(p.get("potholes", 7)))
+        gravel_count = max(0, int(p.get("gravel_count", 18)))
+        gravel_size = max(float(p.get("gravel_size", 0.035)), 0.003)
         border = max(float(p.get("border", 0.12)), 0.02)
         sand_rgba = "0.78 0.60 0.32 1"
-        # The center is a low-friction sand surface; raised borders make the pit
-        # visible and keep the component useful when placed over a flat hfield.
-        _add_box(worldbody, f"{prefix}_sand", element, 0.0, 0.0, -depth / 2,
-                 (length / 2, width / 2, depth / 2), sand_rgba,
-                 {"friction": "1.2 0.35 0.02"})
+        _add_sandpit_mesh(asset, worldbody, element, prefix, length, width, depth,
+                          surface_height, roughness, grid, potholes,
+                          gravel_count, gravel_size, sand_rgba)
         _add_box(worldbody, f"{prefix}_left", element, -length / 2, 0.0, border / 2,
                  (border / 2, width / 2 + border, border / 2), sand_rgba)
         _add_box(worldbody, f"{prefix}_right", element, length / 2, 0.0, border / 2,

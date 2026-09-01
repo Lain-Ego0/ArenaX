@@ -34,7 +34,9 @@ DEFAULT_PARAMS = {
     "triangle": {"count": 4, "length": 0.9, "width": 1.0, "height": 0.8, "angle": 30.0, "gap": 0.28, "stagger": 0.8, "pair_yaw": 90.0, "group_spacing": 1.3, "pair_spacing": 1.18},
     "tire_ring": {"count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10, "upright": False},
     "slalom_poles": {"count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32},
-    "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "border": 0.12},
+    "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "surface_height": 0.06,
+                "roughness": 0.018, "surface_grid": 13, "potholes": 7,
+                "gravel_count": 18, "gravel_size": 0.035, "border": 0.12},
     "high_wall": {"length": 2.4, "thickness": 0.22, "height": 1.2},
 }
 

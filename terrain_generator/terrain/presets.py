@@ -45,7 +45,9 @@ def playground_scene(seed: int = 7) -> ArenaScene:
             "count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32,
         }),
         TerrainElement("sandpit", x=7.0, y=-2.8, name="sandpit", params={
-            "length": 2.4, "width": 2.0, "depth": 0.06,
+            "length": 2.4, "width": 2.0, "depth": 0.06, "surface_height": 0.06,
+            "roughness": 0.018, "surface_grid": 13, "potholes": 7,
+            "gravel_count": 18, "gravel_size": 0.035,
         }),
         TerrainElement("high_wall", x=8.8, y=0.0, name="high_wall", params={
             "length": 2.4, "thickness": 0.22, "height": 1.2,

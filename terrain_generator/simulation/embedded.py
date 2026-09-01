@@ -46,20 +46,22 @@ class MuJoCoRenderWorker(QThread):
 
     def _apply_commands(self, simulation: M20Simulation | None,
                         model: mujoco.MjModel, data: mujoco.MjData,
-                        camera: mujoco.MjvCamera | None = None) -> None:
+                        camera: mujoco.MjvCamera | None = None) -> bool:
         if camera is None:
             camera = self._camera(simulation)
+        reset_happened = False
         while True:
             try:
                 operation, values = self.commands.get_nowait()
             except queue.Empty:
-                return
+                return reset_happened
             if operation == "stop":
                 if simulation is not None:
                     simulation.command.stop()
                 else:
                     self.stop_event.set()
             elif operation == "reset":
+                reset_happened = True
                 if simulation is not None:
                     simulation.reset()
                 else:
@@ -78,14 +80,20 @@ class MuJoCoRenderWorker(QThread):
             elif operation == "zoom":
                 camera.distance = float(np.clip(camera.distance * float(values.get("factor", 1.0)), 0.2, 100.0))
             elif operation == "rotate":
-                camera.azimuth += float(values.get("dx", 0.0))
-                camera.elevation = float(np.clip(camera.elevation + float(values.get("dy", 0.0)), -89.0, 89.0))
+                # Move the camera opposite to the cursor, so the rendered
+                # scene follows the drag direction (MuJoCo's native viewer
+                # uses this trackball convention).
+                camera.azimuth -= float(values.get("dx", 0.0))
+                camera.elevation = float(np.clip(camera.elevation - float(values.get("dy", 0.0)), -89.0, 89.0))
             elif operation == "pan":
                 # Pan in camera-local screen coordinates.  The scale is
                 # proportional to distance, making the gesture predictable.
-                camera.lookat[0] += float(values.get("dx", 0.0)) * camera.distance * 0.002
-                camera.lookat[1] += float(values.get("dy", 0.0)) * camera.distance * 0.002
-
+                camera.lookat[0] -= float(values.get("dx", 0.0)) * camera.distance * 0.002
+                dy = float(values.get("dy", 0.0))
+                # Free cameras (ordinary terrain XML) use the opposite
+                # vertical screen convention from the tracking M20 camera.
+                # Keep the generic scene's right-drag up/down intuitive.
+                camera.lookat[1] += (dy if simulation is None else -dy) * camera.distance * 0.002
     @staticmethod
     def _camera(simulation: M20Simulation | None) -> mujoco.MjvCamera:
         camera = mujoco.MjvCamera()
@@ -129,8 +137,17 @@ class MuJoCoRenderWorker(QThread):
             # tick and keeps Qt responsive on slower machines.
             start_wall = time.perf_counter()
             next_frame = start_wall
+            fallen = False
+            fallen_reported = False
             while not self.stop_event.is_set():
-                self._apply_commands(simulation, model, data, camera)
+                if self._apply_commands(simulation, model, data, camera):
+                    # ``mj_resetData`` rewinds data.time to zero.  Restarting
+                    # the wall-clock origin prevents the catch-up loop from
+                    # running a freshly reset episode at accelerated speed.
+                    start_wall = time.perf_counter()
+                    next_frame = start_wall
+                    fallen = False
+                    fallen_reported = False
                 if self.stop_event.is_set():
                     break
                 now = time.perf_counter()
@@ -138,11 +155,18 @@ class MuJoCoRenderWorker(QThread):
                 # Catch up to wall clock, capped to prevent a long render or
                 # policy inference pause from creating an unbounded backlog.
                 steps = 0
-                while data.time < target_sim_time and steps < 24:
+                while not fallen and data.time < target_sim_time and steps < 24:
                     if simulation is not None:
                         simulation._step()
                         if simulation._is_fallen():
-                            simulation.reset()
+                            # Keep the fallen pose visible.  Reset is an
+                            # explicit user action (the Reset button), not an
+                            # automatic side effect of the worker loop.
+                            fallen = True
+                            if not fallen_reported:
+                                self.status_changed.emit("机器人已摔倒，请点击“重置”恢复")
+                                fallen_reported = True
+                            break
                     else:
                         mujoco.mj_step(model, data)
                     steps += 1
@@ -157,7 +181,7 @@ class MuJoCoRenderWorker(QThread):
                     next_frame = now + 1.0 / 30.0
                 # If one physics step overshot the wall clock, yield until the
                 # next tick instead of spinning a CPU core.
-                delay = min(0.004, max(0.0, data.time - target_sim_time))
+                delay = 0.01 if fallen else min(0.004, max(0.0, data.time - target_sim_time))
                 if delay:
                     time.sleep(delay)
         except Exception as exc:  # pragma: no cover - backend/display dependent
@@ -411,13 +435,17 @@ class EmbeddedSimulationPage(QWidget):
             return
         pixmap = QPixmap.fromImage(self.last_image)
         target = self.render_label.size()
+        if target.width() <= 0 or target.height() <= 0:
+            return
         if pixmap.size() == target:
             self.render_label.setPixmap(pixmap)
         else:
-            # Fast scaling keeps the GUI thread below the 30 FPS frame budget;
-            # the source image is already rendered at 720p.
+            # Fill the complete canvas instead of leaving black letterbox
+            # bands when the Qt panel and 16:9 source have different ratios.
+            # A direct fast scale also keeps objects at the view edges visible
+            # (cropping would hide them when the camera is zoomed out).
             self.render_label.setPixmap(pixmap.scaled(
-                target, Qt.KeepAspectRatio, Qt.FastTransformation
+                target, Qt.IgnoreAspectRatio, Qt.FastTransformation
             ))
 
     def resizeEvent(self, event) -> None:

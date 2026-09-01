@@ -47,7 +47,9 @@ DEFAULT_PARAMS = {
     "triangle": {"count": 4, "length": 0.9, "width": 1.0, "height": 0.8, "angle": 30.0, "gap": 0.28, "stagger": 0.8, "pair_yaw": 90.0, "group_spacing": 1.3, "pair_spacing": 1.18},
     "tire_ring": {"count": 3, "spacing": 0.85, "major_radius": 0.27, "minor_radius": 0.10, "upright": False},
     "slalom_poles": {"count": 6, "spacing": 0.8, "radius": 0.07, "height": 1.2, "zigzag": 0.32},
-    "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "border": 0.12},
+    "sandpit": {"length": 2.4, "width": 2.0, "depth": 0.06, "surface_height": 0.06,
+                "roughness": 0.018, "surface_grid": 13, "potholes": 7,
+                "gravel_count": 18, "gravel_size": 0.035, "border": 0.12},
     "high_wall": {"length": 2.4, "thickness": 0.22, "height": 1.2},
 }
 
@@ -60,7 +62,11 @@ PARAM_SCHEMA = {
     "triangle": [("count", "数量", "个", "int"), ("length", "单个长度", "m", "float"), ("width", "宽度", "m", "float"), ("height", "高度", "m", "float"), ("angle", "顶角", "deg", "float"), ("gap", "间隙", "m", "float"), ("stagger", "左右错位", "m", "float"), ("pair_yaw", "每组旋转", "deg", "float"), ("group_spacing", "组间距", "m", "float"), ("pair_spacing", "组内间距", "m", "float")],
     "tire_ring": [("count", "数量", "个", "int"), ("spacing", "间距", "m", "float"), ("major_radius", "轮胎主半径", "m", "float"), ("minor_radius", "轮胎厚度", "m", "float"), ("upright", "竖放", "", "bool")],
     "slalom_poles": [("count", "杆数", "根", "int"), ("spacing", "杆间距", "m", "float"), ("radius", "杆半径", "m", "float"), ("height", "杆高", "m", "float"), ("zigzag", "交错距离", "m", "float")],
-    "sandpit": [("length", "长度", "m", "float"), ("width", "宽度", "m", "float"), ("depth", "深度", "m", "float"), ("border", "边框宽度", "m", "float")],
+    "sandpit": [("length", "长度", "m", "float"), ("width", "宽度", "m", "float"),
+                ("depth", "沙层厚度", "m", "float"), ("surface_height", "表面高度", "m", "float"),
+                ("roughness", "起伏幅度", "m", "float"), ("surface_grid", "曲面网格", "格", "int"),
+                ("potholes", "坑洼数量", "个", "int"), ("gravel_count", "碎石数量", "个", "int"),
+                ("gravel_size", "碎石半径", "m", "float"), ("border", "边框宽度", "m", "float")],
     "high_wall": [("length", "墙长", "m", "float"), ("thickness", "墙厚", "m", "float"), ("height", "墙高", "m", "float")],
 }
 
