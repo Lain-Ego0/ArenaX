@@ -32,14 +32,10 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install.ps1 -Run
 ```
 
-脚本会复用已有的 `.venv`，不会重复创建环境；如果系统没有可用的 Python 3.10+
-解释器，需要先安装 Python。
+脚本使用 `uv` 管理项目内的 `.venv`，缺少 `uv` 时会通过官方安装脚本自动安装；如果本机没有对应的 Python 版本，`uv` 也会自动下载。也可以指定 Python 版本：
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .
+./install.sh --python 3.12
 ```
 
 ```bash
