@@ -12,7 +12,7 @@ from .scene import export_scene, load_scene
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Generate procedural MuJoCo terrains")
+    parser = argparse.ArgumentParser(description="PAVE: generate and validate robot terrains in MuJoCo")
     parser.add_argument("--type", dest="kind", choices=SUPPORTED_TERRAIN_TYPES, default="noise")
     parser.add_argument("--output", type=Path, default=Path("generated/terrain"))
     parser.add_argument("--rows", type=int, default=128)
@@ -31,9 +31,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--view", action="store_true", help="open the generated scene in the interactive viewer")
     parser.add_argument("--preset", choices=("playground",), help="use a ready-made robot test arena")
     parser.add_argument("--scene", type=Path, help="load an arena scene JSON file")
+    parser.add_argument("--xml", type=Path, help="run or view an existing MuJoCo XML file directly")
     parser.add_argument("--base-scene", type=Path, help="append the arena to an existing robot MuJoCo scene")
     parser.add_argument("--no-test-ball", action="store_true", help="do not add the demo free ball")
     parser.add_argument("--edit", action="store_true", help="open the graphical arena editor")
+    parser.add_argument("--policy", type=Path, help="run an ONNX policy in the generated or supplied XML scene")
+    parser.add_argument("--robot", choices=("m20",), default="m20", help="robot profile for ONNX inference")
+    parser.add_argument("--robot-config", type=Path, help="YAML policy/runtime profile")
+    parser.add_argument("--duration", type=float, default=30.0, help="simulation duration per policy episode")
+    parser.add_argument("--episodes", type=int, default=1, help="number of policy episodes")
+    parser.add_argument("--headless", action="store_true", help="run policy without opening the MuJoCo viewer")
+    parser.add_argument("--control-host", help=argparse.SUPPRESS)
+    parser.add_argument("--control-port", type=int, help=argparse.SUPPRESS)
     return parser
 
 
@@ -45,7 +54,17 @@ def main(argv: list[str] | None = None) -> int:
         launch_editor(args.output, args.base_scene)
         return 0
 
-    if args.scene:
+    if args.policy and args.robot == "m20" and not args.xml and not args.base_scene:
+        bundled_scene = Path(__file__).resolve().parent.parent / "assets" / "m20" / "mjcf" / "scene.xml"
+        if bundled_scene.is_file():
+            args.base_scene = bundled_scene
+
+    if args.xml:
+        if args.scene or args.preset or args.base_scene:
+            raise SystemExit("--xml cannot be combined with --scene, --preset, or --base-scene")
+        paths = {"xml": args.xml}
+        scene = None
+    elif args.scene:
         scene = load_scene(args.scene)
         if args.base_scene:
             scene.base_scene = str(args.base_scene)
@@ -62,14 +81,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         scene = ArenaScene(name="terrain", terrain=config)
         scene.base_scene = str(args.base_scene) if args.base_scene else None
-    paths = export_scene(scene, args.output, include_test_ball=not args.no_test_ball)
-    print(f"Generated scene: {scene.name} ({len(scene.elements)} obstacle components)")
-    for label, path in paths.items():
-        print(f"  {label}: {path}")
+    if scene is not None:
+        paths = export_scene(scene, args.output, include_test_ball=not args.no_test_ball)
+        print(f"Generated scene: {scene.name} ({len(scene.elements)} obstacle components)")
+        for label, path in paths.items():
+            print(f"  {label}: {path}")
     if args.validate:
         model = load_and_validate(paths["xml"])
         print(f"MuJoCo validation passed: {model.ngeom} geoms, {model.nhfield} heightfield")
-    if args.view:
+    if args.policy:
+        if args.robot != "m20":
+            raise SystemExit("only the M20 runtime is currently implemented")
+        from .m20_sim import run_m20_policy
+
+        run_m20_policy(
+            paths["xml"], args.policy, args.robot_config,
+            duration=args.duration, episodes=args.episodes, view=not args.headless,
+            control_host=args.control_host, control_port=args.control_port,
+        )
+    elif args.view:
         from .viewer import view_xml
 
         view_xml(paths["xml"])

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+import os
 from pathlib import Path
 import struct
 from xml.etree import ElementTree as ET
@@ -36,6 +37,17 @@ def _indent_xml(root: ET.Element) -> str:
     return ET.tostring(root, encoding="unicode", short_empty_elements=True) + "\n"
 
 
+def _relativize_xml_resources(xml_text: str, output_dir: Path) -> str:
+    """Store absolute asset paths relative to the exported XML directory."""
+
+    root = ET.fromstring(xml_text)
+    for item in root.iter():
+        resource_name = item.get("file")
+        if item.tag != "include" and resource_name and Path(resource_name).is_absolute():
+            item.set("file", os.path.relpath(resource_name, output_dir))
+    return _indent_xml(root)
+
+
 def _unique_name(parent: ET.Element, tag: str, base: str) -> str:
     names = {item.get("name") for item in parent.findall(tag)}
     if base not in names:
@@ -46,17 +58,86 @@ def _unique_name(parent: ET.Element, tag: str, base: str) -> str:
     return f"{base}_{index}"
 
 
+def _resolve_scene_resources(root: ET.Element, scene_dir: Path) -> None:
+    """Make resource paths in one XML document independent of its caller.
+
+    MuJoCo ``include`` files are parsed as part of the parent document.  This
+    means a ``meshdir`` in an included robot file is otherwise easy to lose
+    when a generated scene is written to a different directory.  Resolving
+    every resource before merging the document keeps robot model includes
+    usable from the terrain exporter.
+    """
+
+    compiler = root.find("compiler")
+    mesh_dir = Path(compiler.get("meshdir", "")) if compiler is not None else Path()
+    for item in root.iter():
+        resource_name = item.get("file")
+        if not resource_name or item.tag == "include":
+            continue
+        resource = Path(resource_name)
+        if resource.is_absolute():
+            continue
+        base_dir = scene_dir / mesh_dir if item.tag == "mesh" else scene_dir
+        item.set("file", str((base_dir / resource).resolve()))
+
+    if compiler is not None:
+        compiler.attrib.pop("meshdir", None)
+
+
+def _merge_included_document(parent: ET.Element, included: ET.Element) -> None:
+    """Merge the sections of an included MuJoCo document into its parent."""
+
+    mergeable = {
+        "compiler", "default", "asset", "worldbody", "actuator", "sensor",
+        "tendon", "equality", "contact", "keyframe",
+    }
+    for child in list(included):
+        existing = parent.find(child.tag) if child.tag in mergeable else None
+        if existing is None:
+            parent.append(child)
+        elif child.tag == "compiler":
+            existing.attrib.update(child.attrib)
+        else:
+            existing.extend(list(child))
+
+
+def _expand_includes(root: ET.Element, scene_dir: Path) -> None:
+    """Inline MuJoCo includes and resolve each file relative to its source."""
+
+    for include in list(root.iter("include")):
+        include_parent = next((candidate for candidate in root.iter()
+                               if include in list(candidate)), None)
+        if include_parent is None:
+            continue
+        include_path = Path(include.get("file", ""))
+        if not include_path.is_absolute():
+            include_path = scene_dir / include_path
+        include_path = include_path.resolve()
+        included_root = ET.parse(include_path).getroot()
+        # Lightweight fragments can remain includes.  Full robot model files
+        # commonly carry a compiler/meshdir section, so those are expanded to
+        # make their meshes independent of the generated XML's directory.
+        has_local_resources = included_root.find("compiler") is not None or any(
+            item.get("file") for item in included_root.iter() if item.tag in {"mesh", "hfield", "texture", "skin"}
+        )
+        if not has_local_resources:
+            include.set("file", str(include_path))
+            continue
+        _expand_includes(included_root, include_path.parent)
+        _resolve_scene_resources(included_root, include_path.parent)
+        include_parent.remove(include)
+        _merge_included_document(root, included_root)
+
+    _resolve_scene_resources(root, scene_dir)
+
+
 def _load_base_scene(base_scene_path: str | Path, model_name: str) -> ET.Element:
-    """Load a robot scene template and resolve its relative resources."""
+    """Load a robot scene template, inline includes, and resolve resources."""
 
     path = Path(base_scene_path).resolve()
     root = ET.parse(path).getroot()
+    _expand_includes(root, path.parent)
     root.set("model", model_name)
-    for item in root.iter():
-        if item.tag in {"include", "mesh", "hfield", "texture", "skin"} and item.get("file"):
-            resource = Path(item.get("file", ""))
-            if not resource.is_absolute():
-                item.set("file", str((path.parent / resource).resolve()))
     return root
 
 
@@ -454,9 +535,10 @@ def export_mujoco(terrain: TerrainMap, output_dir: str | Path,
     xml_path = directory / "terrain.xml"
     json_path = directory / "terrain.json"
     _write_png(png_path, terrain.heights)
-    xml_path.write_text(build_xml(terrain, elements=elements, model_name=model_name,
-                                  include_test_ball=include_test_ball,
-                                  base_scene_path=base_scene), encoding="utf-8")
+    xml_text = build_xml(terrain, elements=elements, model_name=model_name,
+                         include_test_ball=include_test_ball,
+                         base_scene_path=base_scene)
+    xml_path.write_text(_relativize_xml_resources(xml_text, directory.resolve()), encoding="utf-8")
     metadata = {
         "config": terrain.config.to_dict(),
         "height_min": float(terrain.heights.min()),

@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtCore import QPointF, QRectF, Qt
+import PyQt5
+from PyQt5.QtCore import QPointF, QRectF, QTimer, Qt
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QBrush, QPolygonF
 from PyQt5.QtWidgets import (
-    QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
+    QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
     QMessageBox, QPushButton, QSpinBox, QSplitter, QStatusBar, QVBoxLayout,
     QWidget,
@@ -65,6 +68,11 @@ COLORS = {
     "ramp": "#2a9d8f", "stepping_stones": "#6b7c93", "triangle": "#e76f51",
     "tire_ring": "#263238", "slalom_poles": "#d1493f", "sandpit": "#c89b5a", "high_wall": "#315f9c",
 }
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BUNDLED_M20_SCENE = Path("assets/m20/mjcf/scene.xml")
+BUNDLED_M20_POLICY = Path("policies/m20/policy.onnx")
+PROJECT_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
 
 
 def rotate_xy(x: float, y: float, yaw: float) -> tuple[float, float]:
@@ -379,14 +387,15 @@ class QtArenaEditor(QMainWindow):
         self.output_edit = QLineEdit(str(self.output_dir))
         self.base_scene_edit = QLineEdit(self.scene.base_scene or "")
         scene_form.addRow("输出目录", self.output_edit)
-        scene_form.addRow("机器人 XML", self.base_scene_edit)
+        scene_form.addRow("自定义机器人 XML（可选）", self.base_scene_edit)
         right_layout.addWidget(scene_box)
-        self.export_button = QPushButton("一键导出 MuJoCo")
-        self.export_button.clicked.connect(self.export)
-        right_layout.addWidget(self.export_button)
-        self.view_button = QPushButton("导出并打开 MuJoCo")
+        self.view_button = QPushButton("导出并在 MuJoCo 查看")
         self.view_button.clicked.connect(self.export_and_view)
         right_layout.addWidget(self.view_button)
+        self.robot_button = QPushButton("导出并添加机器人")
+        self.robot_button.setToolTip("导出地图后，在 MuJoCo 中加入 M20 并运行策略")
+        self.robot_button.clicked.connect(self.export_and_robot)
+        right_layout.addWidget(self.robot_button)
         right_layout.addStretch(1)
         splitter.addWidget(right)
         splitter.setSizes([250, 850, 330])
@@ -563,14 +572,23 @@ class QtArenaEditor(QMainWindow):
         self.selected_index = None
         self.refresh()
 
-    def prepare_scene(self) -> None:
-        self.scene.base_scene = self.base_scene_edit.text().strip() or None
-        self.output_dir = Path(self.output_edit.text().strip() or "generated/editor")
+    def prepare_scene(self, base_scene_override: Path | None = None) -> None:
+        self.scene.base_scene = str(base_scene_override) if base_scene_override else self.base_scene_edit.text().strip() or None
+        output_root = Path(self.output_edit.text().strip() or "generated/editor").expanduser().resolve()
+        timestamp = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
+        output_root.mkdir(parents=True, exist_ok=True)
+        candidate = output_root / f"output_{timestamp}"
+        suffix = 1
+        while candidate.exists():
+            candidate = output_root / f"output_{timestamp}_{suffix:02d}"
+            suffix += 1
+        self.output_dir = candidate
 
-    def export(self) -> dict[str, Path] | None:
-        self.prepare_scene()
+    def export(self, base_scene_override: Path | None = None,
+               include_test_ball: bool = False) -> dict[str, Path] | None:
+        self.prepare_scene(base_scene_override)
         try:
-            paths = export_scene(self.scene, self.output_dir)
+            paths = export_scene(self.scene, self.output_dir, include_test_ball=include_test_ball)
             self.statusBar().showMessage(f"已导出：{paths['xml']}")
             return paths
         except Exception as exc:
@@ -581,13 +599,78 @@ class QtArenaEditor(QMainWindow):
         paths = self.export()
         if not paths:
             return
-        command = [sys.executable, "-m", "terrain_generator.cli", "--scene", str(paths["scene"]),
-                   "--output", str(self.output_dir), "--view", "--no-test-ball"]
-        subprocess.Popen(command, cwd=str(Path.cwd()))
+        command = [
+            self.runtime_python(), "-m", "terrain_generator.cli",
+            "--xml", self.project_relative(paths["xml"]), "--view",
+        ]
+        self.launch_mujoco(command, paths["xml"])
+        self.statusBar().showMessage(f"已导出并在 MuJoCo 查看：{paths['xml']}")
+
+    def export_and_robot(self) -> None:
+        bundled_scene = PROJECT_ROOT / BUNDLED_M20_SCENE
+        bundled_policy = PROJECT_ROOT / BUNDLED_M20_POLICY
+        if not bundled_scene.is_file() or not bundled_policy.is_file():
+            QMessageBox.critical(
+                self, "M20 资源缺失",
+                f"找不到内置 M20 场景或策略：\n{bundled_scene}\n{bundled_policy}",
+            )
+            return
+        paths = self.export(base_scene_override=bundled_scene)
+        if not paths:
+            return
+        command = [
+            self.runtime_python(), "-m", "terrain_generator.control_panel",
+            "--xml", self.project_relative(paths["xml"]),
+            "--policy", str(BUNDLED_M20_POLICY),
+        ]
+        self.launch_mujoco(command, paths["xml"])
+        self.statusBar().showMessage(f"已导出并在 MuJoCo 查看 M20 策略：{paths['xml']}")
+
+    @staticmethod
+    def runtime_python() -> str:
+        """Use the repository virtualenv for child processes when available."""
+
+        return str(PROJECT_PYTHON) if PROJECT_PYTHON.is_file() else sys.executable
+
+    @staticmethod
+    def project_relative(path: Path) -> str:
+        return os.path.relpath(path, PROJECT_ROOT)
+
+    def launch_mujoco(self, command: list[str], xml_path: Path) -> None:
+        """Launch MuJoCo independently and retain a per-export diagnostic log."""
+
+        log_path = xml_path.with_name("mujoco.log")
+        try:
+            with log_path.open("w", encoding="utf-8") as log_file:
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(PROJECT_ROOT),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+        except OSError as exc:
+            QMessageBox.critical(self, "MuJoCo 启动失败", str(exc))
+            return
+        QTimer.singleShot(1200, lambda: self.check_mujoco_process(process, log_path))
+
+    def check_mujoco_process(self, process: subprocess.Popen, log_path: Path) -> None:
+        if process.poll() is None:
+            return
+        try:
+            details = log_path.read_text(encoding="utf-8")[-4000:]
+        except OSError:
+            details = "无法读取 mujoco.log"
+        QMessageBox.critical(
+            self, "MuJoCo 未能打开",
+            f"进程已退出（code={process.returncode}）。\n\n日志：{log_path}\n\n{details}",
+        )
 
 
 def launch_qt_editor(output_dir: str | Path = "generated/editor",
                      base_scene: str | Path | None = None) -> None:
+    platform_plugins = Path(PyQt5.__file__).resolve().parent / "Qt5" / "plugins" / "platforms"
+    os.environ.setdefault("QT_QPA_PLATFORM_PLUGIN_PATH", str(platform_plugins))
     app = QApplication.instance() or QApplication(sys.argv)
     window = QtArenaEditor(output_dir, base_scene)
     window.show()

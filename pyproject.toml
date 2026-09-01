@@ -3,13 +3,21 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mujoco-terrain-generator"
+name = "pave-robotics"
 version = "0.1.0"
-description = "Procedural terrain generator and MuJoCo XML exporter"
+description = "PAVE: Policy and Arena Validation Environment for robot terrain testing"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.23", "mujoco>=3.0", "PyQt5>=5.15"]
+dependencies = [
+  "numpy>=1.23",
+  "mujoco>=3.0",
+  "PyQt5>=5.15",
+  "onnxruntime>=1.18",
+  "PyYAML>=6.0",
+  "glfw>=2.7",
+]
 
 [project.scripts]
+pave = "terrain_generator.cli:main"
 mujoco-terrain = "terrain_generator.cli:main"
 
 [tool.setuptools.packages.find]

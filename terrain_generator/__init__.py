@@ -1,4 +1,4 @@
-"""Procedural terrain generation for MuJoCo."""
+"""PAVE: Policy and Arena Validation Environment."""
 
 from .generators import generate_terrain
 from .models import ArenaScene, TerrainConfig, TerrainElement, TerrainMap
