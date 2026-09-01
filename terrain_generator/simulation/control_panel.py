@@ -33,7 +33,7 @@ class ControlBridge:
         self.connection: socket.socket | None = None
         self.lock = Lock()
         self.closed = False
-        self.thread = Thread(target=self._accept, name="pave-control-bridge", daemon=True)
+        self.thread = Thread(target=self._accept, name="arenax-control-bridge", daemon=True)
         self.thread.start()
 
     def _accept(self) -> None:
@@ -90,7 +90,7 @@ class M20ControlPanel(QMainWindow):
         self.bridge = ControlBridge()
         self.simulation_process: subprocess.Popen | None = None
         self.buttons: list[QPushButton] = []
-        self.setWindowTitle("PAVE · M20 控制面板")
+        self.setWindowTitle("ArenaX Robotics · M20 控制面板")
         self.resize(360, 520)
         self.build_ui()
         self.start_simulation()
@@ -227,7 +227,7 @@ class M20ControlPanel(QMainWindow):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="PAVE M20 PyQt control panel")
+    parser = argparse.ArgumentParser(description="ArenaX Robotics M20 PyQt control panel")
     parser.add_argument("--xml", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--robot-config", type=Path)

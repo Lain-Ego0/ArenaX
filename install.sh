@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create the project virtual environment, install PAVE, and optionally launch
+# Create the project virtual environment, install ArenaX Robotics, and optionally launch
 # the graphical editor.  The script is intentionally dependency-light: it
 # only requires Python 3.10+ and a working venv module.
 
@@ -52,7 +52,7 @@ fi
 
 VENV_PYTHON="$VENV_DIR/bin/python"
 "$VENV_PYTHON" -c 'import sys; sys.exit("The existing .venv must use Python 3.10+.") if sys.version_info < (3, 10) else None'
-echo "Installing PAVE and its dependencies..."
+echo "Installing ArenaX Robotics and its dependencies..."
 "$VENV_PYTHON" -m pip install --upgrade pip
 "$VENV_PYTHON" -m pip install -e "$ROOT_DIR"
 
@@ -60,7 +60,7 @@ echo "Installation complete. Activate with:"
 echo "  source \"$VENV_DIR/bin/activate\""
 
 if [[ "$RUN_EDITOR" -eq 1 ]]; then
-  echo "Launching the PAVE editor..."
+  echo "Launching the ArenaX Robotics editor..."
   exec "$VENV_PYTHON" -m terrain_generator.cli --edit --output "$ROOT_DIR/generated/editor"
 fi
 

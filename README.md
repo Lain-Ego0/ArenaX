@@ -1,6 +1,6 @@
-# PAVE
+# ArenaX Robotics
 
-Policy and Arena Validation Environment
+Robot Terrain & Policy Validation Environment
 
 一个面向机器人策略验证的 MuJoCo 地形与场景工具。它把参数化地形生成成：
 
@@ -117,10 +117,12 @@ python3 -m terrain_generator.cli \
 编辑器使用蓝白色界面，所有操作都以障碍对象为中心：左侧选择新增障碍类型和对象列表，中间是场地俯视预览，右侧编辑当前障碍的参数。点击空白处按当前类型新增，点击障碍即可选中；按住 Ctrl 点击障碍进入单对象编辑，可直接拖动障碍改变位置，使用右侧旋转按钮改变朝向，最后点击“保存障碍”或“删除”。
 
 ```bash
-pave \
+arenax \
   --edit \
   --output generated/my_arena
 ```
+
+命令行入口使用 `arenax`。
 
 编辑器右侧提供一个导出操作、一个机器人选项和一个页面跳转箭头：
 
@@ -132,13 +134,13 @@ pave \
   .venv/bin/python -c "import mujoco; m=mujoco.MjModel.from_xml_path('assets/go2/mjcf/scene.xml'); print(m.nbody, m.njnt, m.nu)"
   ```
 
-  PAVE 控制器按所选机器人加载对应 ONNX 策略。`model_20000.pt` 作为 Go2 训练检查点保留，部署时只使用 `policies/go2/policy.onnx`。
+  ArenaX Robotics 控制器按所选机器人加载对应 ONNX 策略。`model_20000.pt` 作为 Go2 训练检查点保留，部署时只使用 `policies/go2/policy.onnx`。
 
   命令行可在 M20 与 Go2 之间切换：
 
   ```bash
-  pave --robot m20 --policy policies/m20/policy.onnx
-  pave --robot go2 --policy policies/go2/policy.onnx
+  arenax --robot m20 --policy policies/m20/policy.onnx
+  arenax --robot go2 --policy policies/go2/policy.onnx
   ```
 
   M20 与 Go2 使用独立的三层资源，不会共享关节顺序或控制参数：
@@ -168,7 +170,7 @@ pave \
 直接复制到该目录，打开编辑器后会自动发现（也可以点击“刷新”）；也可以在编辑器中浏览到其他目录。
 
 ```bash
-pave --terrain-library /path/to/terrain_library --terrain-name rocky --view
+arenax --terrain-library /path/to/terrain_library --terrain-name rocky --view
 ```
 
 省略 `--terrain-name` 时读取目录中按文件名排序的第一个 XML。地形库场景按原 XML
@@ -191,12 +193,12 @@ pave --terrain-library /path/to/terrain_library --terrain-name rocky --view
 
 ## ONNX 策略与机器人验证
 
-PAVE 当前接入 M20 的 DreamWaQ ONNX 推理运行时。M20 的 MJCF、STL 网格和 ONNX 策略均已放入本仓库的 `assets/m20/` 和 `policies/m20/`，不再依赖下载目录。也可以通过命令行传入其他策略或机器人 XML。
+ArenaX Robotics 当前接入 M20 的 DreamWaQ ONNX 推理运行时。M20 的 MJCF、STL 网格和 ONNX 策略均已放入本仓库的 `assets/m20/` 和 `policies/m20/`，不再依赖下载目录。也可以通过命令行传入其他策略或机器人 XML。
 
 使用仓库内置的 DreamWaQ M20 模型和策略（未指定 `--base-scene` 时会自动使用内置模型）：
 
 ```bash
-pave \
+arenax \
   --preset playground \
   --output generated/m20_playground \
   --policy policies/m20/policy.onnx
@@ -205,12 +207,12 @@ pave \
 也可以直接运行已经导出的 XML：
 
 ```bash
-pave \
+arenax \
   --xml generated/m20_playground/terrain.xml \
   --policy /path/to/policy.onnx
 ```
 
-内嵌机器人运行时点击 MuJoCo 画面后直接使用 `W/A/S/D/Q/E` 控制；左侧只保留全向速度滑块和手动重置。直接使用 `pave --policy` 时仍可使用方向键或数字小键盘控制。
+内嵌机器人运行时点击 MuJoCo 画面后直接使用 `W/A/S/D/Q/E` 控制；左侧只保留全向速度滑块和手动重置。直接使用 `arenax --policy` 时仍可使用方向键或数字小键盘控制。
 
 运行时会校验 ONNX 输入维度。目前 M20 DreamWaQ 配置为 `57` 维观测、`5` 帧历史，即 `342` 维策略输入，动作维度为 `16`。
 

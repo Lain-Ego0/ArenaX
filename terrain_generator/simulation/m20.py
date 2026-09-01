@@ -87,7 +87,7 @@ class OnnxPolicy:
         inputs = self.session.get_inputs()
         outputs = self.session.get_outputs()
         if len(inputs) != 1 or not outputs:
-            raise ValueError("PAVE expects an ONNX policy with one input and at least one output")
+            raise ValueError("ArenaX Robotics expects an ONNX policy with one input and at least one output")
         self.input_name = inputs[0].name
         self.output_name = outputs[0].name
         shape = inputs[0].shape
@@ -98,7 +98,7 @@ class OnnxPolicy:
         if self.input_size is not None and observation.size != self.input_size:
             raise ValueError(
                 f"policy input mismatch: ONNX expects {self.input_size} values, "
-                f"PAVE produced {observation.size}"
+                f"ArenaX Robotics produced {observation.size}"
             )
         result = self.session.run(
             [self.output_name], {self.input_name: observation.reshape(1, -1)}
@@ -114,7 +114,7 @@ class M20ControlClient:
         self.host = host
         self.port = port
         self.socket: socket.socket | None = None
-        self.thread = Thread(target=self._run, name="pave-control-client", daemon=True)
+        self.thread = Thread(target=self._run, name="arenax-control-client", daemon=True)
 
     def start(self) -> None:
         self.thread.start()

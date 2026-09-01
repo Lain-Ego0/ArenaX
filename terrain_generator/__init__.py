@@ -1,4 +1,4 @@
-"""PAVE: Policy and Arena Validation Environment."""
+"""ArenaX Robotics: robot terrain and policy validation environment."""
 
 from .terrain import (
     ArenaScene, TerrainConfig, TerrainElement, TerrainMap, export_mujoco,

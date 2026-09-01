@@ -2,7 +2,7 @@ param(
     [switch]$Run
 )
 
-# Create the project virtual environment, install PAVE, and optionally launch
+# Create the project virtual environment, install ArenaX Robotics, and optionally launch
 # the graphical editor. Requires Python 3.10+ and the Python launcher or python
 # executable on PATH.
 
@@ -33,7 +33,7 @@ if (-not (Test-Path $VenvPython)) {
 
 & $VenvPython -c "import sys; sys.exit('The existing .venv must use Python 3.10+') if sys.version_info < (3, 10) else None"
 
-Write-Host "Installing PAVE and its dependencies..."
+Write-Host "Installing ArenaX Robotics and its dependencies..."
 & $VenvPython -m pip install --upgrade pip
 & $VenvPython -m pip install -e $RootDir
 
@@ -41,7 +41,7 @@ Write-Host "Installation complete. Activate with:"
 Write-Host "  .\.venv\Scripts\Activate.ps1"
 
 if ($Run) {
-    Write-Host "Launching the PAVE editor..."
+    Write-Host "Launching the ArenaX Robotics editor..."
     & $VenvPython -m terrain_generator.cli --edit --output (Join-Path $RootDir "generated\editor")
     exit $LASTEXITCODE
 }

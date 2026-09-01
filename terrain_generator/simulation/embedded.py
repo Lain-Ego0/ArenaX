@@ -1,4 +1,4 @@
-"""Lightweight MuJoCo rendering embedded in the PAVE Qt application."""
+"""Lightweight MuJoCo rendering embedded in the ArenaX Robotics Qt application."""
 
 from __future__ import annotations
 
@@ -273,7 +273,7 @@ class EmbeddedSimulationPage(QWidget):
         back_button = QPushButton("← 返回地形编辑")
         back_button.clicked.connect(self.go_back)
         header.addWidget(back_button)
-        title = QLabel("PAVE · MuJoCo 仿真验证")
+        title = QLabel("ArenaX Robotics · MuJoCo 仿真验证")
         title.setStyleSheet("font-size: 22px; font-weight: 700; color: #125a9e;")
         header.addWidget(title)
         header.addStretch(1)

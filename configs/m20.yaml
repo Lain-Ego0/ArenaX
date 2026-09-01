@@ -1,4 +1,4 @@
-# PAVE M20 inference profile.
+# ArenaX Robotics M20 inference profile.
 # Bundled policy: policies/m20/policy.onnx
 control_dt: 0.02
 simulation_dt: 0.005

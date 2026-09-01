@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pave-robotics"
+name = "arenax-robotics"
 version = "0.1.0"
-description = "PAVE: Policy and Arena Validation Environment for robot terrain testing"
+description = "ArenaX Robotics: robot terrain and policy validation in MuJoCo"
 requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.23",
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pave = "terrain_generator.cli:main"
+arenax = "terrain_generator.cli:main"
 mujoco-terrain = "terrain_generator.cli:main"
 
 [tool.setuptools.packages.find]

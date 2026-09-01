@@ -12,7 +12,10 @@ from .terrain.scene import export_scene, load_scene
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="PAVE: generate and validate robot terrains in MuJoCo")
+    parser = argparse.ArgumentParser(
+        prog="arenax",
+        description="ArenaX Robotics: generate and validate robot terrains in MuJoCo",
+    )
     parser.add_argument("--type", dest="kind", choices=SUPPORTED_TERRAIN_TYPES, default="noise")
     parser.add_argument("--output", type=Path, default=Path("generated/terrain"))
     parser.add_argument("--rows", type=int, default=128)
