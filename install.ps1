@@ -1,5 +1,7 @@
 param(
-    [switch]$Run
+    [switch]$Run,
+    [ValidateSet("zh", "en")]
+    [string]$Language = "zh"
 )
 
 # Create the project virtual environment, install ArenaX Robotics, and optionally launch
@@ -42,7 +44,7 @@ Write-Host "  .\.venv\Scripts\Activate.ps1"
 
 if ($Run) {
     Write-Host "Launching the ArenaX Robotics editor..."
-    & $VenvPython -m terrain_generator.cli --edit --output (Join-Path $RootDir "generated\editor")
+    & $VenvPython -m terrain_generator.cli --edit --language $Language --output (Join-Path $RootDir "generated\editor")
     exit $LASTEXITCODE
 }
 

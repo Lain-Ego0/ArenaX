@@ -42,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-scene", type=Path, help="append the arena to an existing robot MuJoCo scene")
     parser.add_argument("--no-test-ball", action="store_true", help="do not add the demo free ball")
     parser.add_argument("--edit", action="store_true", help="open the graphical arena editor")
+    parser.add_argument("--language", choices=("zh", "en"), default="zh",
+                        help="language for graphical interfaces (default: zh)")
     parser.add_argument("--policy", type=Path, help="run an ONNX policy in the generated or supplied XML scene")
     parser.add_argument("--robot", choices=("m20", "go2"), default="m20", help="robot profile for ONNX inference")
     parser.add_argument("--robot-config", type=Path, help="YAML policy/runtime profile")
@@ -58,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.edit:
         from .editor import launch_editor
 
-        launch_editor(args.output, args.base_scene)
+        launch_editor(args.output, args.base_scene, args.language)
         return 0
 
     if args.terrain_library:

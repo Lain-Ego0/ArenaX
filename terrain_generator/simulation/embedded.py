@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
 )
 
 from .m20 import M20Simulation
+from ..i18n import normalize_language, tr
 
 
 class MuJoCoRenderWorker(QThread):
@@ -28,13 +29,14 @@ class MuJoCoRenderWorker(QThread):
 
     def __init__(self, xml_path: Path, policy_path: Path | None = None,
                  config_path: Path | None = None, width: int = 1280,
-                 height: int = 720) -> None:
+                 height: int = 720, language: str = "zh") -> None:
         super().__init__()
         self.xml_path = xml_path
         self.policy_path = policy_path
         self.config_path = config_path
         self.width = width
         self.height = height
+        self.language = normalize_language(language)
         self.commands: queue.Queue[tuple[str, dict[str, Any]]] = queue.Queue()
         self.stop_event = Event()
 
@@ -138,9 +140,11 @@ class MuJoCoRenderWorker(QThread):
             render_options.geomgroup[1] = 0
             render_options.geomgroup[2] = 1
             robot_label = "Go2" if self.config_path and self.config_path.stem == "go2" else "M20"
-            self.status_changed.emit(
-                f"{robot_label} ONNX 策略已启动" if simulation is not None else "MuJoCo 场景已加载"
-            )
+            if simulation is not None:
+                status = f"{robot_label} ONNX policy started" if self.language == "en" else f"{robot_label} ONNX 策略已启动"
+            else:
+                status = tr(self.language, "MuJoCo 场景已加载")
+            self.status_changed.emit(status)
 
             # Render at a stable cadence while stepping simulation in small
             # batches.  This avoids a sleep/wake cycle for every 5 ms physics
@@ -174,7 +178,7 @@ class MuJoCoRenderWorker(QThread):
                             # automatic side effect of the worker loop.
                             fallen = True
                             if not fallen_reported:
-                                self.status_changed.emit("机器人已摔倒，请点击“重置”恢复")
+                                self.status_changed.emit(tr(self.language, "机器人已摔倒，请点击“重置”恢复"))
                                 fallen_reported = True
                             break
                     else:
@@ -195,7 +199,7 @@ class MuJoCoRenderWorker(QThread):
                 if delay:
                     time.sleep(delay)
         except Exception as exc:  # pragma: no cover - backend/display dependent
-            self.error_occurred.emit(f"MuJoCo 内嵌仿真启动失败：{exc}")
+            self.error_occurred.emit(f"{tr(self.language, 'MuJoCo 内嵌仿真启动失败：')}{exc}")
         finally:
             if renderer is not None:
                 renderer.close()
@@ -256,9 +260,11 @@ class EmbeddedSimulationPage(QWidget):
     """Second page with mouse controls on the left and MuJoCo on the right."""
 
     back_requested = pyqtSignal()
+    language_changed = pyqtSignal(str)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, language: str = "zh") -> None:
         super().__init__(parent)
+        self.language = normalize_language(language)
         self.worker: MuJoCoRenderWorker | None = None
         self.last_image: QImage | None = None
         self.control_buttons: list[QPushButton] = []
@@ -266,49 +272,53 @@ class EmbeddedSimulationPage(QWidget):
         self.speed_slider: QSlider | None = None
         self.speed_value_label: QLabel | None = None
         self.build_ui()
+        self.set_language(self.language)
 
     def build_ui(self) -> None:
         root = QVBoxLayout(self)
         header = QHBoxLayout()
-        back_button = QPushButton("← 返回地形编辑")
-        back_button.clicked.connect(self.go_back)
-        header.addWidget(back_button)
-        title = QLabel("ArenaX Robotics · MuJoCo 仿真验证")
-        title.setStyleSheet("font-size: 22px; font-weight: 700; color: #125a9e;")
-        header.addWidget(title)
+        self.back_button = QPushButton(tr(self.language, "← 返回地形编辑"))
+        self.back_button.clicked.connect(self.go_back)
+        header.addWidget(self.back_button)
+        self.title_label = QLabel(tr(self.language, "ArenaX Robotics · MuJoCo 仿真验证"))
+        self.title_label.setStyleSheet("font-size: 22px; font-weight: 700; color: #125a9e;")
+        header.addWidget(self.title_label)
         header.addStretch(1)
+        self.language_button = QPushButton()
+        self.language_button.clicked.connect(self.toggle_language)
+        header.addWidget(self.language_button)
         root.addLayout(header)
 
         content = QHBoxLayout()
         left = QVBoxLayout()
-        self.status_label = QLabel("等待加载场景…")
+        self.status_label = QLabel(tr(self.language, "等待加载场景…"))
         self.status_label.setWordWrap(True)
         left.addWidget(self.status_label)
 
-        key_hint = QLabel("点击仿真画面后：\nW/S 前后 · A/D 左右 · Q/E 转向")
-        key_hint.setWordWrap(True)
-        key_hint.setStyleSheet("color: #476b8c; padding: 8px 2px;")
-        left.addWidget(key_hint)
+        self.key_hint = QLabel(tr(self.language, "点击仿真画面后：\nW/S 前后 · A/D 左右 · Q/E 转向"))
+        self.key_hint.setWordWrap(True)
+        self.key_hint.setStyleSheet("color: #476b8c; padding: 8px 2px;")
+        left.addWidget(self.key_hint)
 
-        speed_box = QGroupBox("全向速度（m/s）")
-        speed_layout = QHBoxLayout(speed_box)
+        self.speed_box = QGroupBox(tr(self.language, "全向速度（m/s）"))
+        speed_layout = QHBoxLayout(self.speed_box)
         self.speed_slider = QSlider(Qt.Horizontal)
         self.speed_slider.setRange(0, 200)
         self.speed_slider.setValue(100)
-        self.speed_slider.setToolTip("WASD 的线速度，0–2 m/s")
+        self.speed_slider.setToolTip(tr(self.language, "WASD 的线速度，0–2 m/s"))
         self.speed_slider.valueChanged.connect(self.speed_changed)
         self.speed_value_label = QLabel("1.00")
         self.speed_value_label.setMinimumWidth(42)
         speed_layout.addWidget(self.speed_slider, 1)
         speed_layout.addWidget(self.speed_value_label)
-        left.addWidget(speed_box)
+        left.addWidget(self.speed_box)
 
-        reset_button = QPushButton("重置")
-        reset_button.setMinimumHeight(52)
-        reset_button.setEnabled(False)
-        reset_button.clicked.connect(lambda: self.send("reset"))
-        self.control_buttons.append(reset_button)
-        left.addWidget(reset_button)
+        self.reset_button = QPushButton(tr(self.language, "重置"))
+        self.reset_button.setMinimumHeight(52)
+        self.reset_button.setEnabled(False)
+        self.reset_button.clicked.connect(lambda: self.send("reset"))
+        self.control_buttons.append(self.reset_button)
+        left.addWidget(self.reset_button)
         left.addStretch(1)
         left_widget = QWidget()
         left_widget.setLayout(left)
@@ -316,7 +326,7 @@ class EmbeddedSimulationPage(QWidget):
         content.addWidget(left_widget)
 
         self.render_label = MuJoCoCanvas()
-        self.render_label.setText("MuJoCo 渲染画面")
+        self.render_label.setText(tr(self.language, "MuJoCo 渲染画面"))
         self.render_label.setAlignment(Qt.AlignCenter)
         self.render_label.setMinimumSize(854, 480)
         self.render_label.setStyleSheet("background: #101820; color: #dcecff;")
@@ -333,14 +343,36 @@ class EmbeddedSimulationPage(QWidget):
             QPushButton:disabled { background: #aab8c4; }
         """)
 
+    def set_language(self, language: str) -> None:
+        self.language = normalize_language(language)
+        self.language_button.setText(tr(self.language, "English") if self.language == "zh" else tr(self.language, "中文"))
+        self.language_button.setToolTip(
+            tr(self.language, "切换到英文") if self.language == "zh" else tr(self.language, "切换到中文")
+        )
+        self.title_label.setText(tr(self.language, "ArenaX Robotics · MuJoCo 仿真验证"))
+        self.back_button.setText(tr(self.language, "← 返回地形编辑"))
+        self.status_label.setText(tr(self.language, "等待加载场景…") if self.worker is None else self.status_label.text())
+        self.key_hint.setText(tr(self.language, "点击仿真画面后：\nW/S 前后 · A/D 左右 · Q/E 转向"))
+        self.speed_box.setTitle(tr(self.language, "全向速度（m/s）"))
+        self.speed_slider.setToolTip(tr(self.language, "WASD 的线速度，0–2 m/s"))
+        self.reset_button.setText(tr(self.language, "重置"))
+        if self.last_image is None:
+            self.render_label.setText(tr(self.language, "MuJoCo 渲染画面"))
+        if self.worker is not None:
+            self.worker.language = self.language
+
+    def toggle_language(self) -> None:
+        self.set_language("en" if self.language == "zh" else "zh")
+        self.language_changed.emit(self.language)
+
     def start(self, xml_path: Path, policy_path: Path | None = None,
               config_path: Path | None = None) -> None:
         self.stop_worker()
         self.last_image = None
         self.render_label.setPixmap(QPixmap())
-        self.render_label.setText("正在加载 MuJoCo…")
-        self.status_label.setText("正在启动内嵌 MuJoCo…")
-        self.worker = MuJoCoRenderWorker(xml_path, policy_path, config_path)
+        self.render_label.setText(tr(self.language, "正在加载 MuJoCo…"))
+        self.status_label.setText(tr(self.language, "正在启动内嵌 MuJoCo…"))
+        self.worker = MuJoCoRenderWorker(xml_path, policy_path, config_path, language=self.language)
         self.worker.frame_ready.connect(self.show_frame)
         self.worker.status_changed.connect(self.status_label.setText)
         self.worker.error_occurred.connect(self.show_error)
@@ -350,7 +382,7 @@ class EmbeddedSimulationPage(QWidget):
         if self.speed_slider is not None:
             self.speed_slider.setValue(100)
         if policy_path is None:
-            self.status_label.setText("场景已准备，请先选择机器人策略")
+            self.status_label.setText(tr(self.language, "场景已准备，请先选择机器人策略"))
         self.worker.start()
 
     def stop_worker(self) -> None:

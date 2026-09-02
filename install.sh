@@ -9,6 +9,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$ROOT_DIR/.venv"
 RUN_EDITOR=0
 PYTHON_VERSION="3.12"
+LANGUAGE="zh"
 
 usage() {
   cat <<'EOF'
@@ -17,6 +18,7 @@ Usage: ./install.sh [options]
 Options:
   --run             install dependencies and launch the PyQt editor
   --python VERSION  choose the Python version managed by uv (default: 3.12)
+  --language LANG   language for the editor: zh or en (default: zh)
   -h, --help        show this help message
 
 The environment is always created in the repository-local .venv directory.
@@ -63,6 +65,14 @@ for ((index = 0; index < ${#args[@]}; index++)); do
       PYTHON_VERSION="${args[index]#*=}"
       [[ -n "$PYTHON_VERSION" ]] || die "Python version cannot be empty."
       ;;
+    --language)
+      ((index + 1 < ${#args[@]})) || die "--language requires zh or en"
+      LANGUAGE="${args[index + 1]}"
+      index=$((index + 1))
+      ;;
+    --language=*)
+      LANGUAGE="${args[index]#*=}"
+      ;;
     -h|--help)
       usage
       exit 0
@@ -74,6 +84,8 @@ for ((index = 0; index < ${#args[@]}; index++)); do
       ;;
   esac
 done
+
+[[ "$LANGUAGE" == "zh" || "$LANGUAGE" == "en" ]] || die "--language must be zh or en"
 
 if ! UV_BIN="$(find_uv)"; then
   if has_command curl; then
@@ -111,7 +123,7 @@ echo "  source \"$VENV_DIR/bin/activate\""
 
 if [[ "$RUN_EDITOR" -eq 1 ]]; then
   echo "Launching the ArenaX Robotics editor..."
-  exec "$VENV_PYTHON" -m terrain_generator.cli --edit --output "$ROOT_DIR/generated/editor"
+  exec "$VENV_PYTHON" -m terrain_generator.cli --edit --language "$LANGUAGE" --output "$ROOT_DIR/generated/editor"
 fi
 
 echo "Launch the editor with:"

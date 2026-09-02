@@ -1,5 +1,7 @@
 # ArenaX Robotics
 
+[English](README_en.md)
+
 Robot Terrain & Policy Validation Environment
 
 一个面向机器人策略验证的 MuJoCo 地形与场景工具。它把参数化地形生成成：
@@ -118,6 +120,9 @@ arenax \
   --output generated/my_arena
 ```
 
+启动英文界面：`arenax --edit --language en --output generated/my_arena`。中文仍为默认界面。
+启动后也可以点击左侧的 **English** 按钮，在中文和英文之间即时切换；仿真页面右上角同样提供语言按钮。
+
 命令行入口使用 `arenax`。
 
 编辑器右侧提供一个导出操作、一个机器人选项和一个页面跳转箭头：
@@ -149,6 +154,20 @@ arenax \
 每次点击都会在输出目录下新建本地时间命名的子目录，例如 `generated/my_arena/output_20260901_153045/`；如果同一秒重复导出，会自动追加序号，不会覆盖已有结果。
 
 内嵌模式不再启动独立的 MuJoCo viewer 或控制面板进程，避免 GLFW 键盘快捷键和 Qt 插件冲突。
+
+如需使用旧的独立控制面板入口，现在也支持两种机器人。通过 `--robot` 选择对应的配置和策略：
+
+```bash
+python3 -m terrain_generator.simulation.control_panel \
+  --robot m20 \
+  --xml generated/m20_playground/terrain.xml \
+  --policy policies/m20/policy.onnx
+
+python3 -m terrain_generator.simulation.control_panel \
+  --robot go2 \
+  --xml generated/go2_arena/terrain.xml \
+  --policy policies/go2/policy.onnx
+```
 
 仿真页画布以 1280×720（720p）渲染，使用 30 FPS 显示并在后台批量补齐物理步，
 避免渲染阻塞策略推理。选中画布后，鼠标滚轮缩放、左键拖动旋转、右键拖动平移；

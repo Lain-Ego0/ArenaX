@@ -23,6 +23,7 @@ from .simulation.embedded import EmbeddedSimulationPage
 from .terrain.presets import playground_scene
 from .terrain.scene import export_scene, load_scene
 from .terrain.library import TerrainLibrary, compose_robot_scene
+from .i18n import normalize_language, tr
 
 
 ELEMENT_LABELS = {
@@ -101,9 +102,11 @@ class PreviewWidget(QWidget):
 
     element_added = None
 
-    def __init__(self, scene: ArenaScene, parent: QWidget | None = None) -> None:
+    def __init__(self, scene: ArenaScene, parent: QWidget | None = None,
+                 language: str = "zh") -> None:
         super().__init__(parent)
         self.arena = scene
+        self.language = normalize_language(language)
         self.selected_index: int | None = None
         self.setMinimumSize(700, 520)
         self.setMouseTracking(True)
@@ -302,7 +305,7 @@ class PreviewWidget(QWidget):
         painter.drawLine(spawn + QPointF(0, -footprint), spawn + QPointF(0, footprint))
         painter.setPen(QPen(QColor("#b33a32"), 1))
         painter.setFont(QFont("Arial", 8, QFont.Bold))
-        painter.drawText(spawn + QPointF(6, -6), "M20 初始点 (0,0)")
+        painter.drawText(spawn + QPointF(6, -6), tr(self.language, "M20 初始点 (0,0)"))
         for index, element in enumerate(self.arena.elements):
             self.draw_element(painter, element, index == self.selected_index)
             center = self.world_to_view(element.x, element.y)
@@ -344,8 +347,10 @@ class PreviewWidget(QWidget):
 
 
 class QtArenaEditor(QMainWindow):
-    def __init__(self, output_dir: str | Path, base_scene: str | Path | None = None) -> None:
+    def __init__(self, output_dir: str | Path, base_scene: str | Path | None = None,
+                 language: str = "zh") -> None:
         super().__init__()
+        self.language = normalize_language(language)
         self.output_dir = Path(output_dir)
         self.scene = ArenaScene(
             name="edited_arena",
@@ -355,14 +360,14 @@ class QtArenaEditor(QMainWindow):
         self.selected_index: int | None = None
         self.latest_xml: Path | None = None
         self.latest_policy: Path | None = None
-        self.setWindowTitle("MuJoCo 机器人 Play 测试场地编辑器")
+        self.param_labels: dict[str, QLabel] = {}
+        self.setWindowTitle(tr(self.language, "MuJoCo 机器人 Play 测试场地编辑器"))
         self.resize(1440, 820)
-        # Keep enough horizontal room for Chinese labels and the library
-        # controls; shrinking below this point makes Qt elide/compress text.
-        self.setMinimumSize(1280, 1000)
+        self.setMinimumSize(1280, 820 if self.language == "en" else 1000)
         self.build_ui()
-        self.simulation_page = EmbeddedSimulationPage(self)
+        self.simulation_page = EmbeddedSimulationPage(self, language=self.language)
         self.simulation_page.back_requested.connect(self.show_editor_page)
+        self.simulation_page.language_changed.connect(self.set_language)
         self.page_stack.addWidget(self.simulation_page)
         self.apply_style()
         self.refresh()
@@ -381,112 +386,122 @@ class QtArenaEditor(QMainWindow):
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
-        title = QLabel("PLAYGROUND\n场地组件")
-        title.setObjectName("title")
-        left_layout.addWidget(title)
+        self.title_label = QLabel(tr(self.language, "PLAYGROUND\n场地组件"))
+        self.title_label.setObjectName("title")
+        left_layout.addWidget(self.title_label)
+        self.language_button = QPushButton()
+        self.language_button.clicked.connect(self.toggle_language)
+        left_layout.addWidget(self.language_button)
         self.tool_combo = QComboBox()
         for kind in SUPPORTED_ELEMENT_TYPES:
-            self.tool_combo.addItem(ELEMENT_LABELS[kind], kind)
+            self.tool_combo.addItem(tr(self.language, ELEMENT_LABELS[kind]), kind)
         self.tool_combo.currentIndexChanged.connect(self.tool_changed)
-        left_layout.addWidget(QLabel("放置障碍类型"))
+        self.obstacle_type_label = QLabel(tr(self.language, "放置障碍类型"))
+        left_layout.addWidget(self.obstacle_type_label)
         left_layout.addWidget(self.tool_combo)
-        left_layout.addWidget(QLabel("点击空白处添加；点击障碍选中。Ctrl+点击进入拖动编辑"))
+        self.instructions_label = QLabel(tr(self.language, "点击空白处添加；点击障碍选中。Ctrl+点击进入拖动编辑"))
+        self.instructions_label.setWordWrap(True)
+        left_layout.addWidget(self.instructions_label)
         self.element_list = QListWidget()
         self.element_list.setSelectionMode(QListWidget.SingleSelection)
         self.element_list.currentRowChanged.connect(self.select_element)
         left_layout.addWidget(self.element_list, 1)
-        self.preset_button = QPushButton("载入标准测试场地")
+        self.preset_button = QPushButton(tr(self.language, "载入标准测试场地"))
         self.preset_button.clicked.connect(self.load_preset)
         left_layout.addWidget(self.preset_button)
-        self.delete_button = QPushButton("删除选中障碍")
+        self.delete_button = QPushButton(tr(self.language, "删除选中障碍"))
         self.delete_button.clicked.connect(self.delete_selected)
         left_layout.addWidget(self.delete_button)
-        self.clear_button = QPushButton("清空场地")
+        self.clear_button = QPushButton(tr(self.language, "清空场地"))
         self.clear_button.clicked.connect(self.clear)
         left_layout.addWidget(self.clear_button)
         splitter.addWidget(left)
 
-        self.preview = PreviewWidget(self.scene)
+        self.preview = PreviewWidget(self.scene, language=self.language)
         self.preview.element_action = self.handle_preview_click
         self.preview.element_moved = self.handle_element_moved
         splitter.addWidget(self.preview)
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
-        right_layout.addWidget(QLabel("障碍编辑"))
-        self.params_box = QGroupBox("障碍参数（填写后实时预览）")
+        self.obstacle_editor_label = QLabel(tr(self.language, "障碍编辑"))
+        right_layout.addWidget(self.obstacle_editor_label)
+        self.params_box = QGroupBox(tr(self.language, "障碍参数（填写后实时预览）"))
         self.params_form = QFormLayout(self.params_box)
         self.param_widgets: dict[str, QWidget] = {}
         right_layout.addWidget(self.params_box)
         action_row = QHBoxLayout()
-        self.delete_action = QPushButton("✕ 删除")
+        self.delete_action = QPushButton(tr(self.language, "✕ 删除"))
         self.delete_action.setObjectName("deleteAction")
         self.delete_action.clicked.connect(self.delete_selected)
-        self.confirm_action = QPushButton("✓ 保存障碍")
+        self.confirm_action = QPushButton(tr(self.language, "✓ 保存障碍"))
         self.confirm_action.setObjectName("confirmAction")
         self.confirm_action.clicked.connect(self.confirm_selected)
         action_row.addWidget(self.delete_action)
         action_row.addWidget(self.confirm_action)
         right_layout.addLayout(action_row)
-        rotate_box = QGroupBox("快速旋转（吸附到 90°）")
-        rotate_layout = QHBoxLayout(rotate_box)
+        self.rotate_box = QGroupBox(tr(self.language, "快速旋转（吸附到 90°）"))
+        rotate_layout = QHBoxLayout(self.rotate_box)
         for text, angle in (("90°", 90), ("180°", 180), ("270°", 270)):
             button = QPushButton(text)
             button.clicked.connect(lambda _checked=False, value=angle: self.rotate_selected(value))
             rotate_layout.addWidget(button)
-        right_layout.addWidget(rotate_box)
+        right_layout.addWidget(self.rotate_box)
         self.error_label = QLabel("")
         self.error_label.setObjectName("error")
         right_layout.addWidget(self.error_label)
-        scene_box = QGroupBox("导出设置")
-        scene_form = QFormLayout(scene_box)
+        self.scene_box = QGroupBox(tr(self.language, "导出设置"))
+        scene_form = QFormLayout(self.scene_box)
+        self.scene_form = scene_form
         self.output_edit = QLineEdit(str(self.output_dir))
         self.base_scene_edit = QLineEdit(self.scene.base_scene or "")
-        scene_form.addRow("输出目录", self.output_edit)
-        scene_form.addRow("自定义机器人 XML（可选）", self.base_scene_edit)
-        right_layout.addWidget(scene_box)
-        library_box = QGroupBox("地形库（可选 XML 目录）")
-        library_form = QFormLayout(library_box)
+        scene_form.addRow(tr(self.language, "输出目录"), self.output_edit)
+        scene_form.addRow(tr(self.language, "自定义机器人 XML（可选）"), self.base_scene_edit)
+        right_layout.addWidget(self.scene_box)
+        self.library_box = QGroupBox(tr(self.language, "地形库（可选 XML 目录）"))
+        library_form = QFormLayout(self.library_box)
+        self.library_form = library_form
         library_row = QHBoxLayout()
         self.library_edit = QLineEdit(str(DEFAULT_TERRAIN_LIBRARY))
-        self.library_edit.setPlaceholderText("放入独立 .xml 地形文件的文件夹")
-        browse_library = QPushButton("浏览")
-        browse_library.clicked.connect(self.browse_library)
-        refresh_library = QPushButton("刷新")
-        refresh_library.clicked.connect(self.refresh_library)
+        self.library_edit.setPlaceholderText(tr(self.language, "放入独立 .xml 地形文件的文件夹"))
+        self.browse_library_button = QPushButton(tr(self.language, "浏览"))
+        self.browse_library_button.clicked.connect(self.browse_library)
+        self.refresh_library_button = QPushButton(tr(self.language, "刷新"))
+        self.refresh_library_button.clicked.connect(self.refresh_library)
         library_row.addWidget(self.library_edit, 1)
-        library_row.addWidget(browse_library)
-        library_row.addWidget(refresh_library)
-        library_form.addRow("目录", library_row)
+        library_row.addWidget(self.browse_library_button)
+        library_row.addWidget(self.refresh_library_button)
+        library_form.addRow(tr(self.language, "目录"), library_row)
         self.library_combo = QComboBox()
-        self.library_combo.setPlaceholderText("选择 XML 场景")
-        library_form.addRow("场景", self.library_combo)
-        self.library_open_button = QPushButton("加载选中的地形库场景")
+        self.library_combo.setPlaceholderText(tr(self.language, "选择 XML 场景"))
+        library_form.addRow(tr(self.language, "场景"), self.library_combo)
+        self.library_open_button = QPushButton(tr(self.language, "加载选中的地形库场景"))
         self.library_open_button.clicked.connect(self.open_library_scene)
         library_form.addRow(self.library_open_button)
-        right_layout.addWidget(library_box)
+        right_layout.addWidget(self.library_box)
+        self.robot_label = QLabel(tr(self.language, "机器人策略"))
         self.robot_combo = QComboBox()
-        self.robot_combo.addItem("不加载机器人", None)
+        self.robot_combo.addItem(tr(self.language, "不加载机器人"), None)
         self.robot_combo.addItem("M20", "m20")
         self.robot_combo.addItem("Go2", "go2")
-        self.robot_combo.setToolTip("选择机器人及其对应策略；默认不加载机器人")
-        right_layout.addWidget(QLabel("机器人策略"))
+        self.robot_combo.setToolTip(tr(self.language, "选择机器人及其对应策略；默认不加载机器人"))
+        right_layout.addWidget(self.robot_label)
         right_layout.addWidget(self.robot_combo)
-        spawn_hint = QLabel(
-            "⚠ M20 默认初始位置：场地中心 (x=0, y=0)，基座高度约 1.0 m。\n"
-            "请避开红色标记区域放置障碍；使用自定义机器人 XML 时请以其 freejoint 位姿为准。"
-        )
-        spawn_hint.setWordWrap(True)
-        spawn_hint.setStyleSheet(
+        self.spawn_hint = QLabel(tr(
+            self.language,
+            "⚠ M20 默认初始位置：场地中心 (x=0, y=0)，基座高度约 1.0 m。\n请避开红色标记区域放置障碍；使用自定义机器人 XML 时请以其 freejoint 位姿为准。",
+        ))
+        self.spawn_hint.setWordWrap(True)
+        self.spawn_hint.setStyleSheet(
             "color: #a53a32; background: #fff1ef; border: 1px solid #efb7b0; "
             "border-radius: 5px; padding: 7px;"
         )
-        right_layout.addWidget(spawn_hint)
-        self.view_button = QPushButton("导出并在 MuJoCo 查看")
+        right_layout.addWidget(self.spawn_hint)
+        self.view_button = QPushButton(tr(self.language, "导出并在 MuJoCo 查看"))
         self.view_button.clicked.connect(self.export_and_view)
         right_layout.addWidget(self.view_button)
         self.next_button = QPushButton("→")
-        self.next_button.setToolTip("进入 MuJoCo 仿真页面")
+        self.next_button.setToolTip(tr(self.language, "进入 MuJoCo 仿真页面"))
         self.next_button.setMinimumHeight(44)
         self.next_button.setVisible(False)
         self.next_button.clicked.connect(self.open_simulation_page)
@@ -495,8 +510,9 @@ class QtArenaEditor(QMainWindow):
         splitter.addWidget(right)
         splitter.setSizes([250, 850, 330])
         self.setStatusBar(QStatusBar())
-        self.statusBar().showMessage("点击空白处新增障碍，点击障碍选中；Ctrl+点击可拖动编辑")
+        self.statusBar().showMessage(tr(self.language, "点击空白处新增障碍，点击障碍选中；Ctrl+点击可拖动编辑"))
         self.rebuild_param_form(self.current_kind(), DEFAULT_PARAMS[self.current_kind()])
+        self.retranslate_ui()
 
     @staticmethod
     def make_spin(minimum: float = -100, maximum: float = 100, step: float = 0.1) -> QDoubleSpinBox:
@@ -524,6 +540,68 @@ class QtArenaEditor(QMainWindow):
             #error { color: #d64545; }
         """)
 
+    def _set_form_label(self, form: QFormLayout, row: int, text: str) -> None:
+        item = form.itemAt(row, QFormLayout.LabelRole)
+        if item is not None and item.widget() is not None:
+            item.widget().setText(text)
+
+    def retranslate_ui(self) -> None:
+        """Update all editor widgets after the language button is clicked."""
+
+        self.setWindowTitle(tr(self.language, "MuJoCo 机器人 Play 测试场地编辑器"))
+        self.language_button.setText(tr(self.language, "English") if self.language == "zh" else tr(self.language, "中文"))
+        self.language_button.setToolTip(
+            tr(self.language, "切换到英文") if self.language == "zh" else tr(self.language, "切换到中文")
+        )
+        self.title_label.setText(tr(self.language, "PLAYGROUND\n场地组件"))
+        self.obstacle_type_label.setText(tr(self.language, "放置障碍类型"))
+        self.instructions_label.setText(tr(self.language, "点击空白处添加；点击障碍选中。Ctrl+点击进入拖动编辑"))
+        for index, kind in enumerate(SUPPORTED_ELEMENT_TYPES):
+            self.tool_combo.setItemText(index, tr(self.language, ELEMENT_LABELS[kind]))
+        self.preset_button.setText(tr(self.language, "载入标准测试场地"))
+        self.delete_button.setText(tr(self.language, "删除选中障碍"))
+        self.clear_button.setText(tr(self.language, "清空场地"))
+        self.obstacle_editor_label.setText(tr(self.language, "障碍编辑"))
+        self.params_box.setTitle(tr(self.language, "障碍参数（填写后实时预览）"))
+        self.delete_action.setText(tr(self.language, "✕ 删除"))
+        self.confirm_action.setText(tr(self.language, "✓ 保存障碍"))
+        self.rotate_box.setTitle(tr(self.language, "快速旋转（吸附到 90°）"))
+        self.scene_box.setTitle(tr(self.language, "导出设置"))
+        self._set_form_label(self.scene_form, 0, tr(self.language, "输出目录"))
+        self._set_form_label(self.scene_form, 1, tr(self.language, "自定义机器人 XML（可选）"))
+        self.library_box.setTitle(tr(self.language, "地形库（可选 XML 目录）"))
+        self.library_edit.setPlaceholderText(tr(self.language, "放入独立 .xml 地形文件的文件夹"))
+        self.browse_library_button.setText(tr(self.language, "浏览"))
+        self.refresh_library_button.setText(tr(self.language, "刷新"))
+        self._set_form_label(self.library_form, 0, tr(self.language, "目录"))
+        self.library_combo.setPlaceholderText(tr(self.language, "选择 XML 场景"))
+        self._set_form_label(self.library_form, 1, tr(self.language, "场景"))
+        self.library_open_button.setText(tr(self.language, "加载选中的地形库场景"))
+        self.robot_label.setText(tr(self.language, "机器人策略"))
+        self.robot_combo.setItemText(0, tr(self.language, "不加载机器人"))
+        self.robot_combo.setToolTip(tr(self.language, "选择机器人及其对应策略；默认不加载机器人"))
+        self.spawn_hint.setText(tr(
+            self.language,
+            "⚠ M20 默认初始位置：场地中心 (x=0, y=0)，基座高度约 1.0 m。\n请避开红色标记区域放置障碍；使用自定义机器人 XML 时请以其 freejoint 位姿为准。",
+        ))
+        self.view_button.setText(tr(self.language, "导出并在 MuJoCo 查看"))
+        self.next_button.setToolTip(tr(self.language, "进入 MuJoCo 仿真页面"))
+        schema = {key: (label, unit) for key, label, unit, _type in PARAM_SCHEMA[self.current_kind()]}
+        for key, label_widget in self.param_labels.items():
+            label, unit = schema[key]
+            display_unit = f" ({tr(self.language, unit)})" if unit else ""
+            label_widget.setText(f"{tr(self.language, label)}{display_unit}")
+        self.statusBar().showMessage(tr(self.language, "点击空白处新增障碍，点击障碍选中；Ctrl+点击可拖动编辑"))
+
+    def toggle_language(self) -> None:
+        self.set_language("en" if self.language == "zh" else "zh")
+
+    def set_language(self, language: str) -> None:
+        self.language = normalize_language(language)
+        self.preview.language = self.language
+        self.retranslate_ui()
+        self.simulation_page.set_language(self.language)
+
     def current_kind(self) -> str:
         return str(self.tool_combo.currentData())
 
@@ -536,7 +614,10 @@ class QtArenaEditor(QMainWindow):
         self.element_list.setCurrentRow(index)
         self.element_list.item(index).setSelected(True)
         self.preview.edit_mode = ctrl
-        self.statusBar().showMessage("单障碍编辑：拖动障碍调整位置；使用右侧旋转按钮，确认后保存或删除" if ctrl else "已选中障碍（Ctrl+点击可进入拖动编辑）")
+        self.statusBar().showMessage(
+            tr(self.language, "单障碍编辑：拖动障碍调整位置；使用右侧旋转按钮，确认后保存或删除")
+            if ctrl else tr(self.language, "已选中障碍（Ctrl+点击可进入拖动编辑）")
+        )
 
     def handle_element_moved(self, index: int, x: float, y: float) -> None:
         if 0 <= index < len(self.scene.elements):
@@ -554,6 +635,7 @@ class QtArenaEditor(QMainWindow):
         while self.params_form.rowCount():
             self.params_form.removeRow(0)
         self.param_widgets.clear()
+        self.param_labels.clear()
         for key, label, unit, value_type in PARAM_SCHEMA[kind]:
             if value_type == "int":
                 widget = QSpinBox()
@@ -561,7 +643,7 @@ class QtArenaEditor(QMainWindow):
                 widget.setValue(int(values.get(key, DEFAULT_PARAMS[kind].get(key, 1))))
                 widget.valueChanged.connect(self.update_selected)
             elif value_type == "bool":
-                widget = QCheckBox("是")
+                widget = QCheckBox(tr(self.language, "是"))
                 widget.setChecked(bool(values.get(key, DEFAULT_PARAMS[kind].get(key, False))))
                 widget.stateChanged.connect(self.update_selected)
             else:
@@ -569,7 +651,11 @@ class QtArenaEditor(QMainWindow):
                 widget.setValue(float(values.get(key, DEFAULT_PARAMS[kind].get(key, 0.1))))
                 widget.valueChanged.connect(self.update_selected)
             self.param_widgets[key] = widget
-            self.params_form.addRow(f"{label}{f' ({unit})' if unit else ''}", widget)
+            display_unit = tr(self.language, unit) if unit else ""
+            self.params_form.addRow(f"{tr(self.language, label)}{f' ({display_unit})' if display_unit else ''}", widget)
+            label_item = self.params_form.itemAt(self.params_form.rowCount() - 1, QFormLayout.LabelRole)
+            if label_item is not None and label_item.widget() is not None:
+                self.param_labels[key] = label_item.widget()
 
     def read_params(self) -> dict:
         values = {}
@@ -596,7 +682,7 @@ class QtArenaEditor(QMainWindow):
         self.refresh(select=index)
         if x * x + y * y < 0.8 * 0.8:
             self.statusBar().showMessage(
-                "警告：障碍位于 M20 初始点附近，运行策略前请确认不会与机器人干涉"
+                tr(self.language, "警告：障碍位于 M20 初始点附近，运行策略前请确认不会与机器人干涉")
             )
 
     def selected_indices(self) -> list[int]:
@@ -623,7 +709,7 @@ class QtArenaEditor(QMainWindow):
 
     def confirm_selected(self) -> None:
         self.update_selected()
-        self.statusBar().showMessage("已确认当前障碍参数")
+        self.statusBar().showMessage(tr(self.language, "已确认当前障碍参数"))
 
     def rotate_selected(self, angle: float) -> None:
         indices = self.selected_indices()
@@ -633,7 +719,10 @@ class QtArenaEditor(QMainWindow):
             element = self.scene.elements[index]
             element.yaw = (round((element.yaw + angle) / 90.0) * 90.0) % 360.0
         self.refresh(select=self.selected_index)
-        self.statusBar().showMessage(f"已将 {len(indices)} 个障碍旋转并吸附到 90°")
+        if self.language == "en":
+            self.statusBar().showMessage(f"Rotated and snapped {len(indices)} obstacle(s) to 90°")
+        else:
+            self.statusBar().showMessage(f"已将 {len(indices)} 个障碍旋转并吸附到 90°")
 
     def refresh(self, select: int | None = None) -> None:
         self.preview.set_scene(self.scene)
@@ -641,7 +730,7 @@ class QtArenaEditor(QMainWindow):
         self.element_list.blockSignals(True)
         self.element_list.clear()
         for index, element in enumerate(self.scene.elements):
-            item = QListWidgetItem(f"{index + 1:02d}  {ELEMENT_LABELS[element.kind]}")
+            item = QListWidgetItem(f"{index + 1:02d}  {tr(self.language, ELEMENT_LABELS[element.kind])}")
             self.element_list.addItem(item)
         self.element_list.blockSignals(False)
         if select is not None and 0 <= select < self.element_list.count():
@@ -688,10 +777,10 @@ class QtArenaEditor(QMainWindow):
         self.prepare_scene(base_scene_override)
         try:
             paths = export_scene(self.scene, self.output_dir, include_test_ball=include_test_ball)
-            self.statusBar().showMessage(f"已导出：{paths['xml']}")
+            self.statusBar().showMessage(f"{tr(self.language, '已导出：')}{paths['xml']}")
             return paths
         except Exception as exc:
-            QMessageBox.critical(self, "导出失败", str(exc))
+            QMessageBox.critical(self, tr(self.language, "导出失败"), str(exc))
             return None
 
     def export_and_view(self) -> None:
@@ -704,8 +793,8 @@ class QtArenaEditor(QMainWindow):
             bundled_policy = PROJECT_ROOT / policy_ref
             if not bundled_scene.is_file() or not bundled_policy.is_file():
                 QMessageBox.critical(
-                    self, f"{robot} 资源缺失",
-                    f"找不到内置 M20 场景或策略：\n{bundled_scene}\n{bundled_policy}",
+                    self, f"{robot}{tr(self.language, '资源缺失')}",
+                    f"{tr(self.language, '找不到内置 M20 场景或策略：')}{bundled_scene}\n{bundled_policy}",
                 )
                 return
 
@@ -716,11 +805,14 @@ class QtArenaEditor(QMainWindow):
         self.latest_policy = PROJECT_ROOT / policy_ref if robot_enabled else None
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
-        mode = f"{robot} 策略场景" if robot_enabled else "普通场景"
-        self.statusBar().showMessage(f"已导出 {mode}：点击右侧 → 进入内嵌 MuJoCo 页面")
+        mode = f"{robot} {tr(self.language, '策略场景')}" if robot_enabled else tr(self.language, "普通场景")
+        if self.language == "en":
+            self.statusBar().showMessage(f"Exported {mode}: {tr(self.language, '点击 → 进入 MuJoCo')}")
+        else:
+            self.statusBar().showMessage(f"已导出 {mode}：点击右侧 → 进入内嵌 MuJoCo 页面")
 
     def browse_library(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self, "选择地形库目录")
+        directory = QFileDialog.getExistingDirectory(self, tr(self.language, "选择地形库目录"))
         if directory:
             self.library_edit.setText(directory)
             self.refresh_library()
@@ -732,23 +824,24 @@ class QtArenaEditor(QMainWindow):
             return
         for asset in TerrainLibrary(directory).assets():
             self.library_combo.addItem(asset.name, str(asset.path))
-        self.statusBar().showMessage(f"地形库已发现 {self.library_combo.count()} 个 XML 场景")
+        self.statusBar().showMessage(
+            f"{tr(self.language, '地形库已发现')} {self.library_combo.count()}{tr(self.language, '个 XML 场景')}"
+        )
 
     def open_library_scene(self) -> None:
         path_text = self.library_combo.currentData()
         if not path_text:
-            QMessageBox.information(self, "地形库", "请先选择一个 XML 场景")
+            QMessageBox.information(self, tr(self.language, "地形库"), tr(self.language, "请先选择一个 XML 场景"))
             return
         path = Path(str(path_text)).expanduser().resolve()
         if not path.is_file():
-            QMessageBox.warning(self, "地形库", f"文件不存在：{path}")
+            QMessageBox.warning(self, tr(self.language, "地形库"), f"{tr(self.language, '文件不存在：')}{path}")
             self.refresh_library()
             return
         answer = QMessageBox.question(
             self,
-            "导入地形库场景",
-            "导入该 XML 将覆盖当前地形生成场景的仿真入口。\n"
-            "当前尚未导出的地形编辑内容不会自动保留，是否继续？",
+            tr(self.language, "导入地形库场景"),
+            tr(self.language, "导入该 XML 将覆盖当前地形生成场景的仿真入口。\n当前尚未导出的地形编辑内容不会自动保留，是否继续？"),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -766,15 +859,24 @@ class QtArenaEditor(QMainWindow):
                     imported_dir / f"{path.stem}_{robot}.xml",
                 )
             except Exception as exc:
-                QMessageBox.critical(self, "导入失败", f"无法将 M20 加载到地形库场景：\n{exc}")
+                QMessageBox.critical(
+                    self, tr(self.language, "导入失败"),
+                    f"{tr(self.language, '无法将 M20 加载到地形库场景：\n')}{exc}",
+                )
                 return
             self.latest_policy = PROJECT_ROOT / robot_policy
         else:
             self.latest_policy = None
         self.next_button.setVisible(True)
         self.next_button.setEnabled(True)
-        mode = f"已加载 {robot} 机器人" if self.latest_policy else "未加载机器人"
-        self.statusBar().showMessage(f"已加载地形库场景：{path.name}（{mode}）；点击 → 进入 MuJoCo")
+        if self.language == "en":
+            mode = f"{robot} robot loaded" if self.latest_policy else tr(self.language, "未加载机器人")
+            self.statusBar().showMessage(
+                f"{tr(self.language, '已加载地形库场景：')}{path.name} ({mode}); {tr(self.language, '点击 → 进入 MuJoCo')}"
+            )
+        else:
+            mode = f"已加载 {robot} 机器人" if self.latest_policy else "未加载机器人"
+            self.statusBar().showMessage(f"已加载地形库场景：{path.name}（{mode}）；点击 → 进入 MuJoCo")
 
     def open_simulation_page(self) -> None:
         if self.latest_xml is None:
@@ -791,11 +893,13 @@ class QtArenaEditor(QMainWindow):
 
 
 def launch_qt_editor(output_dir: str | Path = "generated/editor",
-                     base_scene: str | Path | None = None) -> None:
+                     base_scene: str | Path | None = None,
+                     language: str = "zh") -> None:
     platform_plugins = Path(PyQt5.__file__).resolve().parent / "Qt5" / "plugins" / "platforms"
     os.environ.setdefault("QT_QPA_PLATFORM_PLUGIN_PATH", str(platform_plugins))
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setFont(QFont("Noto Sans CJK SC", 11))
-    window = QtArenaEditor(output_dir, base_scene)
+    language = normalize_language(language)
+    app.setFont(QFont("Noto Sans", 11) if language == "en" else QFont("Noto Sans CJK SC", 11))
+    window = QtArenaEditor(output_dir, base_scene, language)
     window.show()
     app.exec_()

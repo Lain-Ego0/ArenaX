@@ -10,6 +10,7 @@ from tkinter import messagebox
 from .terrain.models import ArenaScene, TerrainConfig, TerrainElement, SUPPORTED_ELEMENT_TYPES
 from .terrain.presets import playground_scene
 from .terrain.scene import export_scene
+from .i18n import normalize_language, tr
 
 
 ELEMENT_LABELS = {
@@ -46,8 +47,9 @@ DEFAULT_PARAMS = {
 
 class ArenaEditor:
     def __init__(self, root: tk.Tk, output_dir: str | Path,
-                 base_scene: str | Path | None = None) -> None:
+                 base_scene: str | Path | None = None, language: str = "zh") -> None:
         self.root = root
+        self.language = normalize_language(language)
         self.output_dir = Path(output_dir)
         self.scene = ArenaScene(name="edited_arena", terrain=TerrainConfig(
             kind="flat", rows=192, cols=320, length=20.0, width=12.0, height=0.05,
@@ -64,27 +66,27 @@ class ArenaEditor:
 
         form = tk.Frame(root)
         form.grid(row=0, column=2, padx=8, pady=8, sticky="n")
-        tk.Label(form, text="朝向 yaw (deg)").grid(row=0, column=0, sticky="w")
+        tk.Label(form, text=tr(self.language, "朝向 yaw (deg)")).grid(row=0, column=0, sticky="w")
         self.yaw_var = tk.StringVar(value="0")
         tk.Entry(form, textvariable=self.yaw_var, width=18).grid(row=1, column=0, pady=(0, 8))
-        tk.Label(form, text="障碍参数 JSON").grid(row=2, column=0, sticky="w")
+        tk.Label(form, text=tr(self.language, "障碍参数 JSON")).grid(row=2, column=0, sticky="w")
         self.params_var = tk.StringVar(value=json.dumps(DEFAULT_PARAMS["platform"], ensure_ascii=False))
         tk.Entry(form, textvariable=self.params_var, width=36).grid(row=3, column=0, pady=(0, 8))
-        tk.Label(form, text="例如：{\"height\": 1.0}", fg="#555").grid(row=4, column=0, sticky="w")
-        tk.Button(form, text="更新选中障碍", command=self.update_selected).grid(row=5, column=0, pady=8, sticky="ew")
+        tk.Label(form, text=tr(self.language, "例如：{\"height\": 1.0}"), fg="#555").grid(row=4, column=0, sticky="w")
+        tk.Button(form, text=tr(self.language, "更新选中障碍"), command=self.update_selected).grid(row=5, column=0, pady=8, sticky="ew")
 
         palette = tk.Frame(root)
         palette.grid(row=1, column=0, padx=8, pady=4, sticky="s")
         for row, kind in enumerate(SUPPORTED_ELEMENT_TYPES):
-            tk.Button(palette, text=ELEMENT_LABELS[kind], width=15,
+            tk.Button(palette, text=tr(self.language, ELEMENT_LABELS[kind]), width=15,
                       command=lambda item=kind: self.choose_kind(item)).grid(row=row // 2, column=row % 2, padx=2, pady=2)
-        tk.Button(root, text="载入标准测试场地", command=self.load_preset).grid(row=2, column=0, padx=8, pady=4, sticky="ew")
-        tk.Button(root, text="删除选中障碍", command=self.delete_selected).grid(row=3, column=0, padx=8, pady=4, sticky="ew")
-        tk.Button(root, text="清空障碍", command=self.clear).grid(row=4, column=0, padx=8, pady=4, sticky="ew")
-        tk.Button(root, text="一键导出 MuJoCo", command=self.export).grid(row=5, column=0, padx=8, pady=4, sticky="ew")
-        self.status = tk.StringVar(value="选择左侧障碍后，在场地中点击放置")
+        tk.Button(root, text=tr(self.language, "载入标准测试场地"), command=self.load_preset).grid(row=2, column=0, padx=8, pady=4, sticky="ew")
+        tk.Button(root, text=tr(self.language, "删除选中障碍"), command=self.delete_selected).grid(row=3, column=0, padx=8, pady=4, sticky="ew")
+        tk.Button(root, text=tr(self.language, "清空障碍"), command=self.clear).grid(row=4, column=0, padx=8, pady=4, sticky="ew")
+        tk.Button(root, text=tr(self.language, "一键导出 MuJoCo"), command=self.export).grid(row=5, column=0, padx=8, pady=4, sticky="ew")
+        self.status = tk.StringVar(value=tr(self.language, "选择左侧障碍后，在场地中点击放置"))
         tk.Label(root, textvariable=self.status, wraplength=170, justify="left").grid(row=6, column=0, padx=8, pady=8)
-        root.title("MuJoCo 机器人测试场地编辑器")
+        root.title(tr(self.language, "MuJoCo 机器人测试场地编辑器"))
         self.redraw()
 
     def world_to_canvas(self, x: float, y: float) -> tuple[float, float]:
@@ -96,7 +98,7 @@ class ArenaEditor:
     def choose_kind(self, kind: str) -> None:
         self.selected_kind = kind
         self.params_var.set(json.dumps(DEFAULT_PARAMS[kind], ensure_ascii=False))
-        self.status.set(f"当前工具：{ELEMENT_LABELS[kind]}。点击场地放置")
+        self.status.set(f"{tr(self.language, '当前工具：')}{tr(self.language, ELEMENT_LABELS[kind])}{tr(self.language, '。点击场地放置')}")
 
     def place_element(self, event: tk.Event) -> None:
         x, y = self.canvas_to_world(event.x, event.y)
@@ -104,9 +106,9 @@ class ArenaEditor:
             params = json.loads(self.params_var.get())
             yaw = float(self.yaw_var.get())
             if not isinstance(params, dict):
-                raise ValueError("参数必须是 JSON 对象")
+                raise ValueError(tr(self.language, "参数必须是 JSON 对象"))
         except (json.JSONDecodeError, ValueError) as exc:
-            messagebox.showerror("参数错误", str(exc))
+            messagebox.showerror(tr(self.language, "参数错误"), str(exc))
             return
         self.scene.elements.append(TerrainElement(self.selected_kind, x=x, y=y, yaw=yaw,
                                                   name=f"{self.selected_kind}_{len(self.scene.elements):02d}", params=params))
@@ -125,15 +127,15 @@ class ArenaEditor:
 
     def update_selected(self) -> None:
         if self.selected_index is None:
-            self.status.set("请先在列表中选择一个障碍")
+            self.status.set(tr(self.language, "请先在列表中选择一个障碍"))
             return
         try:
             params = json.loads(self.params_var.get())
             yaw = float(self.yaw_var.get())
             if not isinstance(params, dict):
-                raise ValueError("参数必须是 JSON 对象")
+                raise ValueError(tr(self.language, "参数必须是 JSON 对象"))
         except (json.JSONDecodeError, ValueError) as exc:
-            messagebox.showerror("参数错误", str(exc))
+            messagebox.showerror(tr(self.language, "参数错误"), str(exc))
             return
         element = self.scene.elements[self.selected_index]
         element.yaw = yaw
@@ -160,8 +162,11 @@ class ArenaEditor:
 
     def export(self) -> None:
         paths = export_scene(self.scene, self.output_dir)
-        self.status.set(f"已导出到：{self.output_dir}")
-        messagebox.showinfo("导出完成", f"MuJoCo XML：\n{paths['xml']}\n\n可用 --view 打开可视化。")
+        self.status.set(f"{tr(self.language, '已导出到：')}{self.output_dir}")
+        messagebox.showinfo(
+            tr(self.language, "导出完成"),
+            f"MuJoCo XML:\n{paths['xml']}\n\n{tr(self.language, '可用 --view 打开可视化。')}",
+        )
 
     def redraw(self) -> None:
         self.canvas.delete("all")
@@ -177,13 +182,14 @@ class ArenaEditor:
             self.canvas.create_text(cx, cy, text=str(index + 1), fill="white")
         self.listbox.delete(0, tk.END)
         for index, element in enumerate(self.scene.elements):
-            self.listbox.insert(tk.END, f"{index + 1}. {ELEMENT_LABELS[element.kind]}")
+            self.listbox.insert(tk.END, f"{index + 1}. {tr(self.language, ELEMENT_LABELS[element.kind])}")
 
 
 def launch_editor(output_dir: str | Path = "generated/editor",
-                  base_scene: str | Path | None = None) -> None:
+                  base_scene: str | Path | None = None,
+                  language: str = "zh") -> None:
     # Keep the old Tk class above for compatibility with downstream imports;
     # the application entry point now uses the blue-white PyQt editor.
     from .qt_editor import launch_qt_editor
 
-    launch_qt_editor(output_dir, base_scene)
+    launch_qt_editor(output_dir, base_scene, language)
