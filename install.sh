@@ -100,8 +100,11 @@ echo "Installing ArenaX Robotics and its dependencies..."
 "$UV_BIN" pip install --python "$VENV_PYTHON" --editable "$ROOT_DIR"
 
 echo "Running installation checks..."
+echo "  Checking runtime dependencies..."
 "$VENV_PYTHON" -c 'import mujoco, numpy, onnxruntime, yaml; import PyQt5'
+echo "  Checking terrain CLI..."
 "$VENV_PYTHON" -m terrain_generator.cli --help >/dev/null
+echo "  Installation checks passed."
 
 echo "Installation complete. Activate with:"
 echo "  source \"$VENV_DIR/bin/activate\""
