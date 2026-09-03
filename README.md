@@ -4,7 +4,23 @@
 
 Robot Terrain & Policy Validation Environment
 
-一个面向机器人策略验证的 MuJoCo 地形与场景工具。它把参数化地形生成成：
+一个面向机器人策略验证的 MuJoCo 地形与场景工具。
+
+## 界面与仿真示例
+
+场地编辑器提供俯视布局、障碍参数编辑和地形库加载：
+
+![ArenaX Robotics 场地编辑器](assets/Image/editor-overview.png)
+
+导出场景后，可以在内嵌 MuJoCo 页面中运行 M20 策略并观察机器人通过障碍：
+
+![M20 台阶场景仿真](assets/Image/m20-stairs-simulation.png)
+
+也可以直接加载地形库中的完整 XML 场景进行验证：
+
+![地形库场景仿真](assets/Image/terrain-library-simulation.png)
+
+支持生成：
 
 - MuJoCo XML 场景文件
 - MuJoCo 可读取的 PNG 高度图
@@ -175,20 +191,6 @@ python3 -m terrain_generator.simulation.control_panel \
 左侧“全向速度”滑块可在 0–2 m/s
 调整（默认 1 m/s）。
 机器人碰撞代理仍参与物理接触，但在内嵌页和独立 viewer 中默认隐藏，仅显示机器人外观网格。
-
-## 界面与仿真示例
-
-场地编辑器提供俯视布局、障碍参数编辑和地形库加载：
-
-![ArenaX Robotics 场地编辑器](assets/Image/editor-overview.png)
-
-导出场景后，可以在内嵌 MuJoCo 页面中运行 M20 策略并观察机器人通过障碍：
-
-![M20 台阶场景仿真](assets/Image/m20-stairs-simulation.png)
-
-也可以直接加载地形库中的完整 XML 场景进行验证：
-
-![地形库场景仿真](assets/Image/terrain-library-simulation.png)
 
 ## 地形库（可选扩展）
 
